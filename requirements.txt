@@ -1,0 +1,10 @@
+pandas
+openai
+transformers
+datasets
+nltk
+spacy
+scikit-learn
+python-dotenv
+tabulate
+sentence-transformers
