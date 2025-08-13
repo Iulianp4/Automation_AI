@@ -15,27 +15,31 @@ SECTION_PATTERN = re.compile(
     re.S | re.I
 )
 
-def build_prompt(story: str, ac_list: List[str]) -> str:
-    ac_lines = "\n".join(f"- {a}" for a in ac_list)
+def build_prompt(requirement_text: str, ac_list: List[str], uc_list: List[str]) -> str:
+    ac_lines = "\n".join(f"- {a}" for a in ac_list) if ac_list else "- (none)"
+    uc_lines = "\n".join(f"- {u}" for u in uc_list) if uc_list else "- (none)"
     return f"""
-Genereaza cazuri de test UI (pozitive si negative) pentru cerinta de mai jos.
-Respecta STRICT urmatorul format pentru FIECARE caz de test, fara tex­te suplimentare:
+Genereaza MAXIM 4 cazuri de test UI (cel putin 1 negativ) pentru cerinta de mai jos.
+Respecta STRICT formatul pentru FIECARE caz:
 Titlu:
 Preconditii:
 Pasi:
 Date:
 Rezultat asteptat:
 
-User story:
-{story}
+Reguli:
+- Pasi numerotati pe linii separate (imperativ).
+- Fara text in afara sectiunilor cerute.
+- Evita formulări vagi ("etc.", "maybe").
+
+Requirement:
+{requirement_text}
 
 Acceptance criteria:
 {ac_lines}
 
-Note:
-- Scrie pasi numerotati si clari (imperativ).
-- Include cel putin 1 test pozitiv si 1 test negativ.
-- Fara explicatii in afara sectiunilor cerute.
+Use cases:
+{uc_lines}
 """
 
 def parse_generated_text(text: str) -> List[Dict]:
@@ -51,8 +55,8 @@ def parse_generated_text(text: str) -> List[Dict]:
         })
     return cases
 
-def generate_with_gpt(story: str, ac_list: List[str]) -> List[Dict]:
-    prompt = build_prompt(story, ac_list)
+def generate_with_gpt(requirement_text: str, ac_list: List[str], uc_list: List[str]) -> List[Dict]:
+    prompt = build_prompt(requirement_text, ac_list, uc_list)
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
