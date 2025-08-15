@@ -15,37 +15,50 @@ SECTION_PATTERN = re.compile(
     re.S | re.I
 )
 
-def build_prompt(requirement_text: str, ac_list: List[str], uc_list: List[str]) -> str:
-    ac_lines = "\n".join(f"- {a}" for a in ac_list) if ac_list else "- (none)"
-    uc_lines = "\n".join(f"- {u}" for u in uc_list) if uc_list else "- (none)"
-    return f"""
-Genereaza MAXIM 4 cazuri de test UI (cel putin 1 negativ) pentru cerinta de mai jos.
-Respecta STRICT formatul pentru FIECARE caz:
-Titlu:
-Preconditii:
-Pasi:
-Date:
-Rezultat asteptat:
+def _lines(items) -> str:
+    """transformă None/NaN/str/list în listă de bullet-uri sau '- (none)'"""
+    try:
+        import pandas as pd
+        if items is None or (isinstance(items, float) and pd.isna(items)):
+            return "- (none)"
+    except Exception:
+        pass
+    if isinstance(items, (str, bytes)):
+        items = [items.decode() if isinstance(items, bytes) else items]
+    if not isinstance(items, list):
+        return "- (none)"
+    items = [str(x).strip() for x in items if str(x).strip()]
+    return "\n".join(f"- {x}" for x in items) if items else "- (none)"
 
-Reguli:
-- Pasi numerotati pe linii separate (imperativ).
-- Fara text in afara sectiunilor cerute.
-- Evita formulări vagi ("etc.", "maybe").
+def build_prompt(requirement_text: str, ac_list, uc_list, num_tests: int, extra_details: str = "") -> str:
+    ac_lines = _lines(ac_list)
+    uc_lines = _lines(uc_list)
+    req_text = (requirement_text or "").strip()
+    details = (extra_details or "").strip()
 
-Requirement:
-{requirement_text}
+    details_block = f"\n\nDetalii suplimentare (pentru context):\n{details}" if details else ""
 
-Acceptance criteria:
-{ac_lines}
-
-Use cases:
-{uc_lines}
-"""
+    return (
+        f"Genereaza EXACT {num_tests} cazuri de test UI (include cel putin 1 negativ) pentru cerinta/contextul de mai jos.\n"
+        "Respecta STRICT formatul pentru FIECARE caz:\n"
+        "Titlu:\nPreconditii:\nPasi:\nDate:\nRezultat asteptat:\n\n"
+        "Reguli:\n"
+        "- Pasi numerotati pe linii separate (imperativ: 'Click', 'Introdu', 'Verifica').\n"
+        "- Fara text in afara sectiunilor cerute.\n"
+        "- Evita formulari vagi (\"etc.\", \"maybe\").\n\n"
+        f"Requirement (daca exista):\n{req_text}\n\n"
+        f"Acceptance criteria (daca exista):\n{ac_lines}\n\n"
+        f"Use cases (daca exista):\n{uc_lines}"
+        f"{details_block}\n"
+    )
 
 def parse_generated_text(text: str) -> List[Dict]:
     cases = []
+    if not text:
+        return cases
     for m in SECTION_PATTERN.finditer(text.strip()):
-        steps = re.sub(r"^\s*\d+\.\s*", "- ", m.group("steps").strip(), flags=re.M)
+        import re as _re
+        steps = _re.sub(r"^\s*\d+\.\s*", "- ", m.group("steps").strip(), flags=_re.M)
         cases.append({
             "title": m.group("title").strip(),
             "preconditions": m.group("pre").strip(),
@@ -55,8 +68,8 @@ def parse_generated_text(text: str) -> List[Dict]:
         })
     return cases
 
-def generate_with_gpt(requirement_text: str, ac_list: List[str], uc_list: List[str]) -> List[Dict]:
-    prompt = build_prompt(requirement_text, ac_list, uc_list)
+def generate_with_gpt(requirement_text: str, ac_list, uc_list, num_tests: int, extra_details: str = "") -> List[Dict]:
+    prompt = build_prompt(requirement_text, ac_list, uc_list, num_tests, extra_details)
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],

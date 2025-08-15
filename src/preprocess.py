@@ -1,131 +1,186 @@
-# src/preprocess.py
 import pandas as pd
 from pathlib import Path
 from .config import DATA_FILES
 
 BASE = Path(__file__).resolve().parent.parent
 
-def _drop_empty_rows(df: pd.DataFrame, cols):
-    """Păstrează doar rândurile unde cel puțin una din coloanele 'cols' are conținut non-gol."""
-    if df.empty:
-        return df
-    # normalizare la string + strip
-    tmp = df[cols].astype(str).apply(lambda s: s.str.strip())
-    mask = tmp.apply(lambda r: any(v for v in r), axis=1)
-    return df[mask].copy()
+# ===== Helpers =====
+def _nonempty(x) -> bool:
+    return bool(str(x).strip())
 
+def _mk_ids(prefix: str, n: int):
+    return [f"{prefix}-{i+1}" for i in range(n)]
+
+def _norm_id(series: pd.Series) -> pd.Series:
+    return (
+        series.astype(str)
+        .str.replace("\u00A0", " ", regex=False)
+        .str.strip()
+    )
+
+# ===== Readers =====
 def read_requirements() -> pd.DataFrame:
     try:
-        df = pd.read_excel(BASE / DATA_FILES["requirements"], sheet_name="stories").fillna("")
+        df = pd.read_excel(BASE / DATA_FILES["requirements"]).fillna("")
     except Exception:
         return pd.DataFrame()
+
     rename = {
         "requirements_id": "requirement_id",
         "requirement_id": "requirement_id",
         "requirements_name": "requirement_name",
         "requirements_description": "requirement_text",
+        "requirements_rationale": "requirement_rationale",
+        "requirements_platform": "requirement_platform",
+        # nou: detalii extra
+        "requirement_details": "requirement_details",
     }
     df = df.rename(columns=rename)
-    keep = [c for c in ["requirement_id","requirement_name","requirement_text"] if c in df.columns]
-    if not keep:
-        return pd.DataFrame()
-    df = df[keep]
-    # elimini rândurile cu toate câmpurile goale
-    df = _drop_empty_rows(df, keep)
-    return df
+
+    for col in ["requirement_text", "requirement_name", "requirement_details"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    keep = [c for c in [
+        "requirement_id","requirement_name","requirement_text",
+        "requirement_rationale","requirement_platform","requirement_details"
+    ] if c in df.columns]
+    df = df[keep].copy()
+
+    # normalize & fallback IDs
+    if "requirement_id" in df.columns:
+        df["requirement_id"] = _norm_id(df["requirement_id"])
+        mask_blank = ~df["requirement_id"].apply(_nonempty)
+        if mask_blank.any():
+            df.loc[mask_blank, "requirement_id"] = _mk_ids("REQ-LONE", int(mask_blank.sum()))
+    else:
+        df["requirement_id"] = _mk_ids("REQ-LONE", len(df))
+
+    # minim necesar: nume sau descriere
+    keep_mask = df["requirement_name"].apply(_nonempty) | df["requirement_text"].apply(_nonempty)
+    return df[keep_mask].reset_index(drop=True)
 
 def read_acceptance() -> pd.DataFrame:
     try:
-        df = pd.read_excel(BASE / DATA_FILES["acceptance_criteria"], sheet_name="criteria").fillna("")
+        df = pd.read_excel(BASE / DATA_FILES["acceptance_criteria"]).fillna("")
     except Exception:
         return pd.DataFrame()
+
     rename = {
         "acceptance_criteria_story_id": "requirement_id",
         "ac_story_id": "requirement_id",
         "acceptance_criteria": "ac_text",
+        "acceptance_criteria_notes": "ac_notes",
+        "acceptance_criteria_comments": "ac_comments",
+        # nou: detalii extra
+        "acceptance_criteria_details": "ac_details",
     }
     df = df.rename(columns=rename)
-    keep = [c for c in ["requirement_id","ac_text"] if c in df.columns]
-    if not keep:
-        return pd.DataFrame()
-    df = df[keep]
-    df = _drop_empty_rows(df, keep)  # <- filtrează rândurile complet goale
-    return df
+
+    if "ac_text" not in df.columns:
+        return pd.DataFrame(columns=["requirement_id","ac_text","ac_details"])
+
+    if "ac_details" not in df.columns:
+        df["ac_details"] = ""
+
+    if "requirement_id" in df.columns:
+        df["requirement_id"] = _norm_id(df["requirement_id"])
+        mask_blank = ~df["requirement_id"].apply(_nonempty)
+        if mask_blank.any():
+            df.loc[mask_blank, "requirement_id"] = _mk_ids("AC-LONE", int(mask_blank.sum()))
+    else:
+        df["requirement_id"] = _mk_ids("AC-LONE", len(df))
+
+    # minim necesar: ac_text
+    df = df[df["ac_text"].apply(_nonempty)][["requirement_id","ac_text","ac_details"]]
+    return df.reset_index(drop=True)
 
 def read_use_cases() -> pd.DataFrame:
-    from pathlib import Path
-    import pandas as pd
-    from .config import DATA_FILES
-
-    BASE = Path(__file__).resolve().parent.parent
-
     try:
-        df = pd.read_excel(BASE / DATA_FILES["use_cases"], sheet_name="manual").fillna("")
+        df = pd.read_excel(BASE / DATA_FILES["use_cases"]).fillna("")
     except Exception:
-        return pd.DataFrame(columns=["requirement_id", "uc_text"])
+        return pd.DataFrame(columns=["requirement_id","uc_text","uc_details"])
 
-    # mapăm antetele
     rename = {
         "use_cases_story_id": "requirement_id",
         "use_cases_title": "uc_title",
+        "use_cases_document_information": "uc_doc_info",
+        "use_cases_revision_history": "uc_rev",
         "use_cases_description": "uc_desc",
         "use_cases_preconditions": "uc_pre",
         "use_cases_main_flow": "uc_main",
         "use_cases_alternative_flows": "uc_alt",
         "use_cases_exception_flows": "uc_exc",
         "use_cases_business_rules": "uc_rules",
+        # nou: detalii extra
+        "use_cases_details": "uc_details",
     }
     df = df.rename(columns=rename)
 
-    # coloane candidate pentru compunerea textului UC
     parts = [c for c in ["uc_title","uc_desc","uc_pre","uc_main","uc_alt","uc_exc","uc_rules"] if c in df.columns]
+    if "uc_details" not in df.columns:
+        df["uc_details"] = ""
 
-    # dacă nu avem niciuna din coloane -> întoarcem DF gol, dar cu schema corectă
     if not parts:
-        return pd.DataFrame(columns=["requirement_id", "uc_text"])
+        # totuși putem avea doar detalii
+        if "uc_details" in df.columns and "requirement_id" in df.columns:
+            out = pd.DataFrame({
+                "requirement_id": df["requirement_id"],
+                "uc_text": df["uc_details"].astype(str).fillna(""),
+                "uc_details": df["uc_details"].astype(str).fillna(""),
+            })
+        else:
+            return pd.DataFrame(columns=["requirement_id","uc_text","uc_details"])
+    else:
+        def build_uc_text(row):
+            vals = [str(row.get(c, "")).strip() for c in parts]
+            vals = [v for v in vals if v]
+            return "\n".join(vals)
 
-    # funcție robustă pe FIECARE rând -> returnează un șir
-    def build_uc_text(row):
-        vals = []
-        for c in parts:
-            v = str(row.get(c, "")).strip()
-            if v:
-                vals.append(v)
-        return "\n".join(vals)
+        out = pd.DataFrame({
+            "requirement_id": df.get("requirement_id", ""),
+            "uc_text": df.apply(build_uc_text, axis=1),
+            "uc_details": df.get("uc_details", "")
+        })
 
-    # construim UC pe rânduri; rezultatul e garantat Series
-    uc_text_series = df.apply(build_uc_text, axis=1)
+    # normalize & fallback IDs
+    out["requirement_id"] = _norm_id(out["requirement_id"])
+    mask_blank = ~out["requirement_id"].apply(_nonempty)
+    if mask_blank.any():
+        out.loc[mask_blank, "requirement_id"] = _mk_ids("UC-LONE", int(mask_blank.sum()))
 
-    # selectăm câmpurile minime
-    out = pd.DataFrame({
-        "requirement_id": df.get("requirement_id", ""),
-        "uc_text": uc_text_series
-    })
-
-    # eliminăm rândurile complet goale
-    def _nonempty(x): return bool(str(x).strip())
-    out = out[out.apply(lambda r: _nonempty(r["requirement_id"]) or _nonempty(r["uc_text"]), axis=1)]
-
+    # minim: uc_text sau uc_details
+    out["uc_text"] = out["uc_text"].astype(str)
+    out["uc_details"] = out["uc_details"].astype(str)
+    keep_mask = out["uc_text"].apply(_nonempty) | out["uc_details"].apply(_nonempty)
+    out = out[keep_mask]
     return out.reset_index(drop=True)
 
 def load_all():
-    req = read_requirements()
-    ac  = read_acceptance()
-    uc  = read_use_cases()
+    req_df = read_requirements()
+    ac_df  = read_acceptance()
+    uc_df  = read_use_cases()
 
-    ac_grp = ac.groupby("requirement_id")["ac_text"].apply(list).rename("ac_list") if not ac.empty else pd.Series(dtype=object, name="ac_list")
-    uc_grp = uc.groupby("requirement_id")["uc_text"].apply(list).rename("uc_list") if not uc.empty else pd.Series(dtype=object, name="uc_list")
+    # asigur tip string la id
+    for d in (req_df, ac_df, uc_df):
+        if not d.empty and "requirement_id" in d.columns:
+            d["requirement_id"] = _norm_id(d["requirement_id"])
 
-    merged = req.copy()
-    if not ac_grp.empty:
-        merged = merged.merge(ac_grp, on="requirement_id", how="left")
+    # group & merge (liste AC/UC)
+    if not ac_df.empty:
+        ac_grouped = ac_df.groupby("requirement_id")["ac_text"].apply(list).reset_index()
     else:
-        merged["ac_list"] = [[] for _ in range(len(merged))]
-    if not uc_grp.empty:
-        merged = merged.merge(uc_grp, on="requirement_id", how="left")
-    else:
-        merged["uc_list"] = [[] for _ in range(len(merged))]
+        ac_grouped = pd.DataFrame(columns=["requirement_id","ac_text"])
 
-    merged["ac_list"] = merged["ac_list"].apply(lambda v: v if isinstance(v, list) else [])
-    merged["uc_list"] = merged["uc_list"].apply(lambda v: v if isinstance(v, list) else [])
-    return merged, ac, uc
+    if not uc_df.empty:
+        uc_grouped = uc_df.groupby("requirement_id")["uc_text"].apply(list).reset_index()
+    else:
+        uc_grouped = pd.DataFrame(columns=["requirement_id","uc_text"])
+
+    merged_df = req_df.merge(ac_grouped, on="requirement_id", how="left") \
+                      .merge(uc_grouped, on="requirement_id", how="left")
+
+    merged_df["ac_list"] = merged_df["ac_text"].apply(lambda x: x if isinstance(x, list) else [])
+    merged_df["uc_list"] = merged_df["uc_text"].apply(lambda x: x if isinstance(x, list) else [])
+
+    return merged_df, ac_df, uc_df
