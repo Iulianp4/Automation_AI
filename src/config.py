@@ -1,21 +1,26 @@
 from pathlib import Path
 
-# Directorul de bază al proiectului
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Locațiile fișierelor de intrare și ieșire
+# Locații fișiere
+BASE = Path(__file__).resolve().parent.parent
 DATA_FILES = {
-    "requirements": BASE_DIR / "data" / "requirements.xlsx",
-    "acceptance_criteria": BASE_DIR / "data" / "acceptance_criteria.xlsx",
-    "use_cases": BASE_DIR / "data" / "use_cases.xlsx",
-    "report": BASE_DIR / "results" / "report.xlsx"
+    "requirements": "data/requirements.xlsx",
+    "acceptance_criteria": "data/acceptance_criteria.xlsx",
+    "use_cases": "data/use_cases.xlsx",
+    "report": "results/report.xlsx",
 }
 
-# Coloanele din exportul pentru execuția testelor
+# Export sheet-ul pentru execuție
 EXECUTION_EXPORT_HEADERS = [
     "Nr.Crt",
     "Steps",
     "Actual Result",
     "Expected Result",
-    "Document of evidence"
+    "Document of evidence",
 ]
+
+# === MODURI DE GENERARE ===
+# Valori permise: "row" (per-rând) sau "group" (agregat pe Requirement ID)
+AC_MODE = "row"     # "row" = fiecare rând AC produce teste independent
+UC_MODE = "row"     # "group" = se grupează toate UC cu același Requirement ID
+
+# (poți schimba aici rapid fără să modifici main.py)
