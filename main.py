@@ -434,6 +434,9 @@ def main():
     ac_only  = preprocess.read_acceptance()
     uc_only  = preprocess.read_use_cases()
 
+    manual_df = preprocess.read_manual_cases()
+    has_manual = not manual_df.empty
+
     has_req = not req_only.empty
     has_ac  = not ac_only.empty
     has_uc  = not uc_only.empty
@@ -497,6 +500,14 @@ def main():
             meta={**meta_common, "Source": src_label, "Input rows": len(uc_only), "Generated cases": len(df_uc)}
         )
         consolidated_parts.append(df_uc)
+
+    if has_manual:
+        # reuse export_excel to get legend/run_info structure consistent
+        export_excel(
+            manual_df,
+            BASE / "results" / "report_manual_baseline.xlsx",
+            meta={**meta_common, "Source": "Manual (baseline)", "Input rows": len(manual_df), "Generated cases": len(manual_df)}
+        )    
 
     # CONSOLIDATED
     if consolidated_parts:
