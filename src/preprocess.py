@@ -184,3 +184,67 @@ def load_all():
     merged_df["uc_list"] = merged_df["uc_text"].apply(lambda x: x if isinstance(x, list) else [])
 
     return merged_df, ac_df, uc_df
+
+def read_manual_cases() -> pd.DataFrame:
+    """
+    Reads manually authored test cases from data/manual_cases.xlsx and normalizes columns to our internal schema:
+      requirement_id, requirement_name, tc_id, title, preconditions, steps, data, expected, category, gherkin, type
+    Accepts both friendly (Excel output) and internal names.
+    """
+    path = BASE / DATA_FILES["manual"]
+    try:
+        df = pd.read_excel(path).fillna("")
+    except Exception:
+        return pd.DataFrame(columns=[
+            "requirement_id","requirement_name","tc_id","title","preconditions","steps",
+            "data","expected","category","gherkin","type"
+        ])
+
+    rename_map = {
+        # friendly -> internal
+        "Requirement ID": "requirement_id",
+        "Requirement Name": "requirement_name",
+        "Test Case ID": "tc_id",
+        "Title": "title",
+        "Preconditions": "preconditions",
+        "Steps": "steps",
+        "Test Data": "data",
+        "Expected Result": "expected",
+        "Category": "category",
+        "Gherkin": "gherkin",
+        "Source": "type",
+        # internal names already
+        "requirement_id": "requirement_id",
+        "requirement_name": "requirement_name",
+        "tc_id": "tc_id",
+        "title": "title",
+        "preconditions": "preconditions",
+        "steps": "steps",
+        "data": "data",
+        "expected": "expected",
+        "category": "category",
+        "gherkin": "gherkin",
+        "type": "type",
+    }
+    df = df.rename(columns=rename_map)
+
+    # ensure all expected cols exist
+    for col in ["requirement_id","requirement_name","tc_id","title","preconditions","steps","data","expected","category","gherkin","type"]:
+        if col not in df.columns:
+            df[col] = ""
+
+    # default type label if not provided
+    df["type"] = df["type"].apply(lambda x: x if str(x).strip() else "Manual (baseline)")
+
+    # normalize whitespace
+    def _norm(s: str) -> str:
+        return str(s or "").replace("\u00A0", " ").strip()
+
+    for c in ["requirement_id","requirement_name","tc_id","title","preconditions","steps","data","expected","category","gherkin","type"]:
+        df[c] = df[c].astype(str).map(_norm)
+
+    # filter out completely empty rows (no title and no expected)
+    mask_keep = df["title"].astype(str).str.strip().ne("") | df["expected"].astype(str).str.strip().ne("")
+    df = df[mask_keep].reset_index(drop=True)
+
+    return df

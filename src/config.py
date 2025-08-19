@@ -1,15 +1,16 @@
 from pathlib import Path
 
-# Locații fișiere
 BASE = Path(__file__).resolve().parent.parent
 DATA_FILES = {
     "requirements": "data/requirements.xlsx",
     "acceptance_criteria": "data/acceptance_criteria.xlsx",
     "use_cases": "data/use_cases.xlsx",
     "report": "results/report.xlsx",
+
+    # NEW: manual test cases written by a human tester
+    "manual": "data/manual_cases.xlsx",
 }
 
-# Export sheet-ul pentru execuție
 EXECUTION_EXPORT_HEADERS = [
     "Nr.Crt",
     "Steps",
@@ -18,9 +19,12 @@ EXECUTION_EXPORT_HEADERS = [
     "Document of evidence",
 ]
 
-# === MODURI DE GENERARE ===
-# Valori permise: "row" (per-rând) sau "group" (agregat pe Requirement ID)
-AC_MODE = "row"     # "row" = fiecare rând AC produce teste independent
-UC_MODE = "row"     # "group" = se grupează toate UC cu același Requirement ID
+# Modes for AC/UC
+AC_MODE = "row"
+UC_MODE = "row"
 
-# (poți schimba aici rapid fără să modifici main.py)
+# --- Comparison settings (for next step – scoring) ---
+# Title+Expected-based soft similarity (0..1). We'll start with a safe threshold.
+COMPARE_SIM_THRESHOLD = 0.60
+# Strategy can be: "title_expected" or "title_steps_expected"
+COMPARE_STRATEGY = "title_expected"

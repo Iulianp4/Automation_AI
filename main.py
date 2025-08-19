@@ -9,13 +9,12 @@ BASE = Path(__file__).resolve().parent
 
 # ---------- utils ----------
 def _ensure_list(v):
-    """normalizeaza orice la lista de stringuri; NaN/None/vid -> []"""
     if isinstance(v, list):
         return [str(x) for x in v if str(x).strip()]
     if v is None:
         return []
     try:
-        import pandas as pd  # local to avoid global import clash
+        import pandas as pd
         if pd.isna(v):
             return []
     except Exception:
@@ -28,14 +27,86 @@ def _ensure_list(v):
 def _clean_text(x: str) -> str:
     return (str(x or "").replace("\u00A0", " ").strip())
 
-# ---------- Export helper (user-friendly) ----------
-def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | None = None):
+def build_traceability(gen_df_internal: pd.DataFrame) -> pd.DataFrame:
     """
-    gen_df_internal: requirement_id, requirement_name, tc_id, title, preconditions, steps, data, expected, type
-    meta: info de rulare -> scris in sheet 'run_info'
+    Long-form traceability: one row per generated test case.
+    Columns are user-friendly for Excel readers.
     """
     if gen_df_internal.empty:
-        print(f"ℹ Nimic de salvat pentru {out_path.name} (0 cazuri).")
+        return pd.DataFrame(columns=[
+            "Requirement ID", "Requirement Name", "Test Case ID", "Title",
+            "Category", "Has Gherkin", "Source"
+        ])
+
+    df = gen_df_internal.copy()
+    df["Has Gherkin"] = df.get("gherkin", "").apply(lambda x: "Yes" if str(x).strip() else "No")
+    cols = {
+        "requirement_id": "Requirement ID",
+        "requirement_name": "Requirement Name",
+        "tc_id": "Test Case ID",
+        "title": "Title",
+        "category": "Category",
+        "type": "Source",
+    }
+    out = df.rename(columns=cols)[
+        ["Requirement ID", "Requirement Name", "Test Case ID", "Title", "Category", "Has Gherkin", "Source"]
+    ].sort_values(["Requirement ID", "Test Case ID"], na_position="last")
+    return out.reset_index(drop=True)
+
+
+def build_metrics(gen_df_internal: pd.DataFrame) -> dict:
+    """
+    Returns a dict of small DataFrames with useful stats:
+    - by_source
+    - by_category
+    - by_req
+    - by_category_and_source
+    - totals
+    """
+    if gen_df_internal.empty:
+        empty = pd.DataFrame(columns=["Key", "Value"])
+        return {
+            "by_source": empty, "by_category": empty, "by_req": empty,
+            "by_category_and_source": empty, "totals": empty
+        }
+
+    df = gen_df_internal.copy()
+
+    by_source = df.groupby("type").size().reset_index(name="Count").rename(columns={"type": "Source"})
+    by_category = df.groupby(df.get("category", "Positive")).size().reset_index(name="Count")
+    by_category = by_category.rename(columns={by_category.columns[0]: "Category"})
+
+    # Per requirement_id (helps reviewers see coverage density)
+    by_req = df.groupby("requirement_id").size().reset_index(name="Test Cases")
+    by_req = by_req.rename(columns={"requirement_id": "Requirement ID"}).sort_values("Test Cases", ascending=False)
+
+    # 2D split
+    by_cat_src = df.pivot_table(index="category", columns="type", values="tc_id", aggfunc="count", fill_value=0)
+    by_cat_src = by_cat_src.rename_axis("Category").reset_index()
+
+    totals = pd.DataFrame([
+        ["Total generated test cases", len(df)],
+        ["Distinct Requirement IDs", df["requirement_id"].nunique(dropna=True)],
+        ["With Gherkin", (df.get("gherkin","").astype(str).str.strip() != "").sum()],
+    ], columns=["Key", "Value"])
+
+    return {
+        "by_source": by_source,
+        "by_category": by_category,
+        "by_req": by_req,
+        "by_category_and_source": by_cat_src,
+        "totals": totals
+    }
+
+# ---------- Export helper ----------
+def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | None = None):
+    """
+    gen_df_internal columns:
+    requirement_id, requirement_name, tc_id, title, preconditions, steps,
+    data, expected, category, gherkin, type
+    """
+    if gen_df_internal.empty:
+        print(f"ℹ Nothing to save for {out_path.name} (0 cases).")
         return
 
     friendly = {
@@ -47,9 +118,15 @@ def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | Non
         "steps": "Steps",
         "data": "Test Data",
         "expected": "Expected Result",
+        "category": "Category",
+        "gherkin": "Gherkin",
         "type": "Source",
     }
     gen_df = gen_df_internal.rename(columns=friendly)
+
+    # build traceability & metrics before writing
+    trc_df = build_traceability(gen_df_internal)
+    metrics = build_metrics(gen_df_internal)
 
     os.makedirs(out_path.parent, exist_ok=True)
     with pd.ExcelWriter(out_path, mode="w") as w:
@@ -66,23 +143,31 @@ def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | Non
         })[EXECUTION_EXPORT_HEADERS]
         exec_df.to_excel(w, sheet_name="execution_export", index=False)
 
-        # 3) legend
+        # 3) traceability
+        trc_df.to_excel(w, sheet_name="traceability", index=False)
+
+        # 4) metrics (multiple short tables, one per sheet)
+        metrics["totals"].to_excel(w, sheet_name="metrics_totals", index=False)
+        metrics["by_source"].to_excel(w, sheet_name="metrics_by_source", index=False)
+        metrics["by_category"].to_excel(w, sheet_name="metrics_by_category", index=False)
+        metrics["by_req"].to_excel(w, sheet_name="metrics_by_req", index=False)
+        metrics["by_category_and_source"].to_excel(w, sheet_name="metrics_cat_x_source", index=False)
+
+        # 5) legend
         legend = pd.DataFrame({
             "Field": [
-                # Requirements
+                # Inputs
                 "Requirement ID (requirements.xlsx)",
                 "Requirement Name (requirements.xlsx)",
                 "Requirement Description (requirements.xlsx)",
                 "Requirement Rationale (requirements.xlsx)",
                 "Requirement Platform (requirements.xlsx)",
                 "Requirement Details (requirements.xlsx)",
-                # AC
                 "Acceptance Criteria Story ID (acceptance_criteria.xlsx)",
                 "Acceptance Criteria (acceptance_criteria.xlsx)",
                 "Acceptance Criteria Notes (acceptance_criteria.xlsx)",
                 "Acceptance Criteria Comments (acceptance_criteria.xlsx)",
                 "Acceptance Criteria Details (acceptance_criteria.xlsx)",
-                # UC
                 "Use Case Story ID (use_cases.xlsx)",
                 "Use Case Title (use_cases.xlsx)",
                 "Use Case Document Information (use_cases.xlsx)",
@@ -94,54 +179,73 @@ def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | Non
                 "Use Case Exception Flows (use_cases.xlsx)",
                 "Use Case Business Rules (use_cases.xlsx)",
                 "Use Case Details (use_cases.xlsx)",
+                # Outputs
+                "Test Case ID",
+                "Title",
+                "Preconditions",
+                "Steps",
+                "Test Data",
+                "Expected Result",
+                "Category",
+                "Gherkin",
+                "Source",
                 # Synthetic
                 "Synthetic ID - Requirements",
                 "Synthetic ID - AC",
                 "Synthetic ID - UC",
             ],
             "Definition": [
-                # Requirements
-                "Identificator unic (fallback automat daca lipseste).",
-                "Numele cerintei.",
-                "Descrierea cerintei (sau Name) folosita in generare.",
-                "Motivatie (optional).",
-                "Platforma tinta (optional).",
-                "Context suplimentar de la tester pentru generare mai bogata.",
-                # AC
-                "ID-ul story-ului asociat criteriului.",
-                "Text criteriu AC (folosit direct la generare).",
-                "Note (optional).",
-                "Comentarii (optional).",
-                "Context suplimentar pentru AC.",
-                # UC
-                "ID-ul story-ului asociat use case-ului.",
-                "Titlul use case-ului.",
-                "Informatii document (optional).",
-                "Istoric revizii (optional).",
-                "Descriere/fluxuri folosite in generare.",
-                "Preconditii.",
-                "Flux principal.",
-                "Fluxuri alternative.",
-                "Fluxuri de exceptie.",
-                "Reguli de business.",
-                "Context suplimentar pentru UC.",
+                # Inputs
+                "Unique requirement identifier (auto fallback if missing).",
+                "Human-friendly requirement name.",
+                "Requirement description used for generation.",
+                "Rationale (optional).",
+                "Target platform (optional).",
+                "Tester-provided extra context.",
+                "Story ID for AC.",
+                "AC text used directly for generation.",
+                "AC notes (optional).",
+                "AC comments (optional).",
+                "Extra AC context.",
+                "Story ID for UC.",
+                "UC title.",
+                "UC document info (optional).",
+                "UC revision history (optional).",
+                "UC description/flows used in generation.",
+                "UC preconditions.",
+                "UC main flow.",
+                "UC alternative flows.",
+                "UC exception flows.",
+                "UC business rules.",
+                "Extra UC context.",
+                # Outputs
+                "Generated identifier for the test case row.",
+                "Short test case headline.",
+                "State/config required before executing steps.",
+                "Actionable, imperative list of steps.",
+                "Input data or fixtures needed by the steps.",
+                "System behavior expected on success.",
+                "Type: Positive / Negative / Boundary / Security / AdHoc.",
+                "Given/When/Then verification for the same scenario.",
+                "Origin of the test (Requirements / Acceptance / Use Case).",
                 # Synthetic
-                "Daca lipseste -> REQ-LONE-<n>.",
-                "Daca lipseste -> AC-LONE-<n>.",
-                "Daca lipseste -> UC-LONE-<n>.",
+                "If missing -> REQ-LONE-<n>.",
+                "If missing -> AC-LONE-<n>.",
+                "If missing -> UC-LONE-<n>.",
             ]
         })
         legend.to_excel(w, sheet_name="legend", index=False)
 
-        # 4) run_info (meta)
+        # 6) run_info
         if meta:
             meta_df = pd.DataFrame(list(meta.items()), columns=["Key", "Value"])
             meta_df.to_excel(w, sheet_name="run_info", index=False)
 
-    print(f"✔ Salvat la: {out_path}")
+    print(f"✔ Saved: {out_path}")
 
-# ---------- REQUIREMENTS (per-rand) ----------
-def generate_from_requirements(req_df: pd.DataFrame, num_tests: int) -> pd.DataFrame:
+
+# ---------- Generators (per-row) ----------
+def generate_from_requirements(req_df: pd.DataFrame, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
     rows = []
     for _, r in req_df.iterrows():
         rid   = _clean_text(r.get("requirement_id", ""))
@@ -149,14 +253,17 @@ def generate_from_requirements(req_df: pd.DataFrame, num_tests: int) -> pd.DataF
         rtext = _clean_text(r.get("requirement_text", "")) or rname
         details = _clean_text(r.get("requirement_details", ""))
 
-        # extra context (daca merge din load_all)
-        ac_list = _ensure_list(r.get("ac_list", []))
+        ac_list = _ensure_list(r.get("ac_list", []))  # optional extra context
         uc_list = _ensure_list(r.get("uc_list", []))
 
         if not (rtext or ac_list or uc_list or details):
             continue
 
-        cases = generate_with_gpt(rtext, ac_list, uc_list, num_tests=num_tests, extra_details=details)
+        cases = generate_with_gpt(
+            rtext, ac_list, uc_list, num_tests=num_tests,
+            extra_details=details, output_style=output_style,
+            include_ad_hoc=include_ad_hoc, mix=mix
+        )
         for i, c in enumerate(cases, start=1):
             rows.append({
                 "requirement_id": rid,
@@ -167,12 +274,13 @@ def generate_from_requirements(req_df: pd.DataFrame, num_tests: int) -> pd.DataF
                 "steps": c["steps"],
                 "data": c["data"],
                 "expected": c["expected"],
+                "category": c.get("category", "Positive"),
+                "gherkin": c.get("gherkin", ""),
                 "type": "Generated from Requirement (per-row)"
             })
     return pd.DataFrame(rows)
 
-# ---------- AC: per-rand ----------
-def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int) -> pd.DataFrame:
+def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
     rows = []
     for _, r in ac_df.iterrows():
         rid = _clean_text(r.get("requirement_id",""))
@@ -181,8 +289,13 @@ def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_te
         details = _clean_text(r.get("ac_details",""))
         if not (ac_text or details):
             continue
-        ac_list = _ensure_list(ac_text)  # un singur element per rand
-        cases = generate_with_gpt("", ac_list, [], num_tests=num_tests, extra_details=details)
+
+        ac_list = _ensure_list(ac_text)  # single-element list (per-row)
+        cases = generate_with_gpt(
+            "", ac_list, [], num_tests=num_tests,
+            extra_details=details, output_style=output_style,
+            include_ad_hoc=include_ad_hoc, mix=mix
+        )
         for i, c in enumerate(cases, 1):
             rows.append({
                 "requirement_id": rid,
@@ -193,12 +306,13 @@ def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_te
                 "steps": c["steps"],
                 "data": c["data"],
                 "expected": c["expected"],
+                "category": c.get("category", "Positive"),
+                "gherkin": c.get("gherkin", ""),
                 "type": "Generated from Acceptance (per-row)"
             })
     return pd.DataFrame(rows)
 
-# ---------- AC: pe grup (Requirement ID) ----------
-def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int) -> pd.DataFrame:
+def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
     rows = []
     for rid, grp in ac_df.groupby("requirement_id"):
         ac_list = _ensure_list(grp["ac_text"].astype(str).tolist())
@@ -207,7 +321,11 @@ def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_
         if not (ac_list or details):
             continue
         rname = req_name_map.get(str(rid).strip(), "")
-        cases = generate_with_gpt("", ac_list, [], num_tests=num_tests, extra_details=details)
+        cases = generate_with_gpt(
+            "", ac_list, [], num_tests=num_tests,
+            extra_details=details, output_style=output_style,
+            include_ad_hoc=include_ad_hoc, mix=mix
+        )
         for i, c in enumerate(cases, 1):
             rows.append({
                 "requirement_id": str(rid).strip(),
@@ -218,12 +336,13 @@ def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_
                 "steps": c["steps"],
                 "data": c["data"],
                 "expected": c["expected"],
+                "category": c.get("category", "Positive"),
+                "gherkin": c.get("gherkin", ""),
                 "type": "Generated from Acceptance (group)"
             })
     return pd.DataFrame(rows)
 
-# ---------- UC: per-rand ----------
-def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int) -> pd.DataFrame:
+def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
     rows = []
     for _, r in uc_df.iterrows():
         rid = _clean_text(r.get("requirement_id",""))
@@ -232,8 +351,13 @@ def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tes
         details = _clean_text(r.get("uc_details",""))
         if not (uc_text or details):
             continue
-        uc_list = _ensure_list(uc_text)  # un singur element per rand
-        cases = generate_with_gpt("", [], uc_list, num_tests=num_tests, extra_details=details)
+
+        uc_list = _ensure_list(uc_text)  # single-element list (per-row)
+        cases = generate_with_gpt(
+            "", [], uc_list, num_tests=num_tests,
+            extra_details=details, output_style=output_style,
+            include_ad_hoc=include_ad_hoc, mix=mix
+        )
         for i, c in enumerate(cases, 1):
             rows.append({
                 "requirement_id": rid,
@@ -244,12 +368,13 @@ def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tes
                 "steps": c["steps"],
                 "data": c["data"],
                 "expected": c["expected"],
+                "category": c.get("category", "Positive"),
+                "gherkin": c.get("gherkin", ""),
                 "type": "Generated from Use Case (per-row)"
             })
     return pd.DataFrame(rows)
 
-# ---------- UC: pe grup (Requirement ID) ----------
-def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int) -> pd.DataFrame:
+def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
     rows = []
     for rid, grp in uc_df.groupby("requirement_id"):
         uc_list = _ensure_list(grp["uc_text"].astype(str).tolist())
@@ -258,7 +383,11 @@ def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_t
         if not (uc_list or details):
             continue
         rname = req_name_map.get(str(rid).strip(), "")
-        cases = generate_with_gpt("", [], uc_list, num_tests=num_tests, extra_details=details)
+        cases = generate_with_gpt(
+            "", [], uc_list, num_tests=num_tests,
+            extra_details=details, output_style=output_style,
+            include_ad_hoc=include_ad_hoc, mix=mix
+        )
         for i, c in enumerate(cases, 1):
             rows.append({
                 "requirement_id": str(rid).strip(),
@@ -269,13 +398,15 @@ def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_t
                 "steps": c["steps"],
                 "data": c["data"],
                 "expected": c["expected"],
+                "category": c.get("category", "Positive"),
+                "gherkin": c.get("gherkin", ""),
                 "type": "Generated from Use Case (group)"
             })
     return pd.DataFrame(rows)
 
 # ---------- Main ----------
 def main():
-    # input dinamice (in functie de moduri)
+    # interactive knobs
     def ask_int(prompt_text, default_val):
         try:
             s = input(f"{prompt_text} (default {default_val}): ").strip()
@@ -283,15 +414,22 @@ def main():
         except Exception:
             return default_val
 
-    req_prompt = "Cate teste per RAND din REQUIREMENTS?"
-    ac_prompt  = "Cate teste per ACCEPTANCE CRITERIA {}?".format("GROUP (per Requirement ID)" if AC_MODE=="group" else "RAND")
-    uc_prompt  = "Cate teste per USE CASE {}?".format("GROUP (per Requirement ID)" if UC_MODE=="group" else "RAND")
+    def ask_choice(prompt_text, choices: list[str], default_val: str):
+        ch = "/".join(choices)
+        s = input(f"{prompt_text} [{ch}] (default {default_val}): ").strip().lower()
+        return s if s in [c.lower() for c in choices] else default_val
 
-    num_req = ask_int(req_prompt, 5)
-    num_ac  = ask_int(ac_prompt, 5)
-    num_uc  = ask_int(uc_prompt, 5)
+    # how many tests per item
+    num_req = ask_int("How many tests per REQUIREMENT row?", 5)
+    num_ac  = ask_int(f"How many tests per ACCEPTANCE CRITERIA ({'GROUP' if AC_MODE=='group' else 'ROW'})?", 5)
+    num_uc  = ask_int(f"How many tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})?", 5)
 
-    # citiri independente
+    # output style & mix
+    output_style  = ask_choice("Output style? (classic/gherkin/both)", ["classic","gherkin","both"], "both")
+    include_ad_hoc = ask_choice("Allow AdHoc category? (yes/no)", ["yes","no"], "yes") == "yes"
+    mix           = ask_choice("Test mix? (balanced/positive_heavy/negative_heavy)", ["balanced","positive_heavy","negative_heavy"], "balanced")
+
+    # read inputs
     req_only = preprocess.read_requirements()
     ac_only  = preprocess.read_acceptance()
     uc_only  = preprocess.read_use_cases()
@@ -300,28 +438,29 @@ def main():
     has_ac  = not ac_only.empty
     has_uc  = not uc_only.empty
 
-    # map nume requirement_id -> requirement_name
     req_name_map = {
         str(r.get("requirement_id","")).strip(): r.get("requirement_name","")
         for _, r in req_only.iterrows()
     }
 
-    print(f"📊 Date găsite: requirements={len(req_only)} rânduri, AC={len(ac_only)} rânduri, UC={len(uc_only)} rânduri.")
+    print(f"📊 Found rows: requirements={len(req_only)}, AC={len(ac_only)}, UC={len(uc_only)}")
     consolidated_parts = []
 
-    # meta comun
     meta_common = {
         "AC mode": AC_MODE,
         "UC mode": UC_MODE,
         "Req tests per item": num_req,
         "AC tests per item": num_ac,
         "UC tests per item": num_uc,
+        "Output style": output_style,
+        "AdHoc allowed": include_ad_hoc,
+        "Mix": mix,
     }
 
-    # REQUIREMENTS
+    # REQUIREMENTS (per-row; enriched via load_all to attach ac_list/uc_list if any)
     if has_req:
-        req_df, _, _ = preprocess.load_all()  # contine si ac_list/uc_list
-        df_req = generate_from_requirements(req_df, num_tests=num_req)
+        req_df, _, _ = preprocess.load_all()
+        df_req = generate_from_requirements(req_df, num_tests=num_req, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix)
         export_excel(
             df_req,
             BASE / "results" / "report_from_requirements.xlsx",
@@ -332,10 +471,10 @@ def main():
     # ACCEPTANCE
     if has_ac:
         if AC_MODE == "group":
-            df_ac = generate_from_acceptance_group(ac_only, req_name_map, num_tests=num_ac)
+            df_ac = generate_from_acceptance_group(ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix)
             src_label = "Acceptance (group)"
         else:
-            df_ac = generate_from_acceptance_row(ac_only, req_name_map, num_tests=num_ac)
+            df_ac = generate_from_acceptance_row(ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix)
             src_label = "Acceptance (per-row)"
         export_excel(
             df_ac,
@@ -347,10 +486,10 @@ def main():
     # USE CASES
     if has_uc:
         if UC_MODE == "group":
-            df_uc = generate_from_use_cases_group(uc_only, req_name_map, num_tests=num_uc)
+            df_uc = generate_from_use_cases_group(uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix)
             src_label = "Use Cases (group)"
         else:
-            df_uc = generate_from_use_cases_row(uc_only, req_name_map, num_tests=num_uc)
+            df_uc = generate_from_use_cases_row(uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix)
             src_label = "Use Cases (per-row)"
         export_excel(
             df_uc,
@@ -359,7 +498,7 @@ def main():
         )
         consolidated_parts.append(df_uc)
 
-    # CONSOLIDAT
+    # CONSOLIDATED
     if consolidated_parts:
         consolidated = pd.concat(consolidated_parts, ignore_index=True)
         export_excel(
@@ -368,7 +507,7 @@ def main():
             meta={**meta_common, "Source": "Consolidated", "Generated cases": len(consolidated)}
         )
     else:
-        print("⚠️ Nu exista date valabile. Completeaza macar unul dintre: requirements, acceptance_criteria, use_cases.")
+        print("⚠️ No valid input present. Fill at least one of: requirements, acceptance_criteria, use_cases.")
 
 if __name__ == "__main__":
     main()
