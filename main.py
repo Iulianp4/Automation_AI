@@ -4,6 +4,9 @@ import pandas as pd
 from src import preprocess
 from src.config import DATA_FILES, EXECUTION_EXPORT_HEADERS, AC_MODE, UC_MODE
 from src.generate_gpt import generate_with_gpt
+from src.comparison import run_comparison, export_comparison_excel
+from src.config import COMPARE_SIM_THRESHOLD, COMPARE_STRATEGY
+
 
 BASE = Path(__file__).resolve().parent
 
@@ -502,14 +505,14 @@ def main():
         consolidated_parts.append(df_uc)
 
     if has_manual:
-        # reuse export_excel to get legend/run_info structure consistent
+        # export manual baseline as-is
         export_excel(
             manual_df,
             BASE / "results" / "report_manual_baseline.xlsx",
             meta={**meta_common, "Source": "Manual (baseline)", "Input rows": len(manual_df), "Generated cases": len(manual_df)}
-        )    
+        )
 
-    # CONSOLIDATED
+    # CONSOLIDATED + in-memory AI df for comparison
     if consolidated_parts:
         consolidated = pd.concat(consolidated_parts, ignore_index=True)
         export_excel(
@@ -517,8 +520,58 @@ def main():
             BASE / DATA_FILES["report"],
             meta={**meta_common, "Source": "Consolidated", "Generated cases": len(consolidated)}
         )
+        df_ai_all = consolidated.copy()
     else:
         print("⚠️ No valid input present. Fill at least one of: requirements, acceptance_criteria, use_cases.")
+        df_ai_all = pd.DataFrame()
+
+    # --------- AI vs. Manual comparison (interactive) ---------
+    has_ai = not df_ai_all.empty
+    if has_ai and has_manual:
+        try:
+            ans = input("Compare AI vs Manual now? (y/N): ").strip().lower()
+            do_cmp = (ans == "y")
+        except Exception:
+            do_cmp = False
+
+        if do_cmp:
+            # let user override defaults; else use config defaults
+            try:
+                strategy_in = input(f"Similarity strategy [title_expected/title_steps_expected] (default {COMPARE_STRATEGY}): ").strip().lower()
+                strategy = strategy_in if strategy_in in ("title_expected","title_steps_expected") else COMPARE_STRATEGY
+            except Exception:
+                strategy = COMPARE_STRATEGY
+
+            try:
+                th_in = input(f"Similarity threshold 0.0..1.0 (default {COMPARE_SIM_THRESHOLD}): ").strip()
+                threshold = float(th_in) if th_in else COMPARE_SIM_THRESHOLD
+            except Exception:
+                threshold = COMPARE_SIM_THRESHOLD
+
+            cmp_res = run_comparison(df_ai_all, manual_df, strategy=strategy, threshold=threshold)
+
+            export_comparison_excel(
+                BASE / "results" / "report_comparison.xlsx",
+                matches=cmp_res["matches"],
+                ai_only=cmp_res["ai_only"],
+                manual_only=cmp_res["manual_only"],
+                scores_summary=cmp_res["scores_summary"],
+                dist_by_category=cmp_res["dist_by_category"],
+                per_req_density=cmp_res["per_requirement_density"],
+                trace_matrix=cmp_res["trace_matrix"],
+                run_info={
+                    "strategy": strategy,
+                    "threshold": threshold,
+                    "ai_total": len(df_ai_all),
+                    "manual_total": len(manual_df),
+                }
+            )
+            print("✔ comparison report saved to results/report_comparison.xlsx")
+    else:
+        if not has_ai:
+            print("ℹ No AI-generated tests available for comparison.")
+        if not has_manual:
+            print("ℹ No manual baseline loaded (data/manual_cases.xlsx is empty or missing).")
 
 if __name__ == "__main__":
     main()
