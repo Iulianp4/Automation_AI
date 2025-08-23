@@ -110,7 +110,7 @@ def best_match_greedy(
                 "has_gherkin_manual": "Yes" if str(m.get("gherkin","")).strip() else "No",
             })
         else:
-            # no match found
+            # no match found for this manual case
             pass
 
     matches_df = pd.DataFrame(matches)
@@ -225,19 +225,19 @@ def build_category_dists(df_ai: pd.DataFrame, df_manual: pd.DataFrame) -> pd.Dat
         if "category" not in tmp.columns:
             tmp["category"] = ""
         d = tmp.groupby("category").size().reset_index(name=label)
-        d = d.rename(columns={"category": "Category"})  # <-- FIX
+        d = d.rename(columns={"category": "Category"})  # <-- keep friendly name
         return d
 
     a = dist(df_ai, "AI")
     m = dist(df_manual, "Manual")
     out = pd.merge(a, m, on="Category", how="outer").fillna(0)
 
-    # percentages și delta
+    # percentages & delta
     total_ai = out["AI"].sum() if "AI" in out.columns else 0
     total_man = out["Manual"].sum() if "Manual" in out.columns else 0
     out["AI_%"] = (out["AI"] / total_ai * 100.0).round(2) if total_ai else 0.0
     out["Manual_%"] = (out["Manual"] / total_man * 100.0).round(2) if total_man else 0.0
-    out["Delta_%"] = (out["AI_%"] - out["Manual_%"]).round(2) if isinstance(out, pd.DataFrame) else 0.0
+    out["Delta_%"] = (out["AI_%"] - out["Manual_%"]).round(2)
 
     return out.sort_values("Category", na_position="last")
 
@@ -294,6 +294,10 @@ def export_comparison_excel(
 ):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with pd.ExcelWriter(out_path, mode="w") as w:
+        # summary sheet (nice front page)
+        _grade_df = _grade_from_scores(scores_summary)
+        _grade_df.to_excel(w, sheet_name="summary", index=False)
+
         matches.to_excel(w, sheet_name="matches", index=False)
         ai_only.to_excel(w, sheet_name="ai_only", index=False)
         manual_only.to_excel(w, sheet_name="manual_only", index=False)
@@ -323,21 +327,36 @@ def run_comparison(
 
     matches_df, manual_only_df, ai_only_df = best_match_greedy(df_manual, df_ai, strategy, threshold)
 
-    # metrics
-    coverage = (len(matches_df) / len(df_manual)) if len(df_manual) else 0.0
-    novelty  = (len(ai_only_df) / len(df_ai)) if len(df_ai) else 0.0
+    # basic metrics
+    manual_total = len(df_manual)
+    ai_total = len(df_ai)
+    matches_count = len(matches_df)
 
+    coverage = (matches_count / manual_total) if manual_total else 0.0       # how much of manual is covered by AI
+    novelty  = (len(ai_only_df) / ai_total) if ai_total else 0.0             # how much AI created beyond manual
+
+    # precision / recall / F1 + grade (0..10)
+    precision = (matches_count / ai_total) if ai_total else 0.0
+    recall    = (matches_count / manual_total) if manual_total else 0.0
+    f1 = (2*precision*recall/(precision+recall)) if (precision+recall) else 0.0
+    grade = round(f1*10, 1)
+
+    # quality signals
     q_ai = lint_quality(df_ai)
     q_manual = lint_quality(df_manual)
 
     scores = pd.DataFrame([
-        ["manual_total", len(df_manual)],
-        ["ai_total", len(df_ai)],
-        ["matches_count", len(matches_df)],
+        ["manual_total", manual_total],
+        ["ai_total", ai_total],
+        ["matches_count", matches_count],
         ["manual_only_count", len(manual_only_df)],
         ["ai_only_count", len(ai_only_df)],
         ["coverage", round(float(coverage), 3)],
         ["novelty", round(float(novelty), 3)],
+        ["precision", round(float(precision), 3)],
+        ["recall", round(float(recall), 3)],
+        ["f1_score", round(float(f1), 3)],
+        ["grade", grade],
         ["quality_ai", q_ai["quality"]],
         ["quality_manual", q_manual["quality"]],
         ["steps_imperative_ai", q_ai["steps_imperative"]],
@@ -361,3 +380,19 @@ def run_comparison(
         per_requirement_density=density,
         trace_matrix=trace,
     )
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def _grade_from_scores(scores_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Pull f1_score from scores_summary and create a 0..10 grade row for an easy front page.
+    """
+    try:
+        f1_val = float(scores_df.loc[scores_df["Key"]=="f1_score","Value"].iloc[0])
+    except Exception:
+        f1_val = 0.0
+    return pd.DataFrame([
+        ["Overall grade (0..10)", round(max(0.0, min(1.0, f1_val))*10, 1)]
+    ], columns=["Metric","Value"])

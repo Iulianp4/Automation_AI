@@ -18,6 +18,15 @@ def _norm_id(series: pd.Series) -> pd.Series:
         .str.strip()
     )
 
+# --- NEW: friendly validator used by main.py ---
+def validate_columns(df: pd.DataFrame, required: list[str], file_label: str) -> None:
+    """Print a friendly warning if required columns are missing."""
+    if df is None or df.empty:
+        return
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        print(f"⚠️ {file_label}: missing columns -> {', '.join(missing)}")
+
 # ===== Readers =====
 def read_requirements() -> pd.DataFrame:
     try:

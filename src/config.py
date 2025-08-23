@@ -28,3 +28,21 @@ UC_MODE = "row"
 COMPARE_SIM_THRESHOLD = 0.60
 # Strategy can be: "title_expected" or "title_steps_expected"
 COMPARE_STRATEGY = "title_expected"
+
+# Interactive mode vs fixed config
+INTERACTIVE = True   # no asking move to ->  False
+
+# Defaults if INTERACTIVE=False
+DEFAULTS = {
+    "num_req": 5,
+    "num_ac": 5,
+    "num_uc": 5,
+    "output_style": "both",          # classic / gherkin / both
+    "include_ad_hoc": True,
+    "mix": "balanced",                # balanced / positive_heavy / negative_heavy
+    "compare_only": False,
+    "do_comparison": True,
+    "similarity_strategy": "title_expected",  # title_expected / title_steps_expected
+    "similarity_threshold": 0.75,
+}
+
