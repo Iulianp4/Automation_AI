@@ -1,36 +1,34 @@
 # src/cache.py
-from __future__ import annotations
-from pathlib import Path
-import json
 import hashlib
-from typing import Any
+import json
+from pathlib import Path
+from typing import Any, Dict
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_FILE = CACHE_DIR / "gpt_cache.json"
+CACHE_DIR.mkdir(exist_ok=True)
 
-def _load() -> dict:
-    if CACHE_FILE.exists():
-        try:
-            return json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+def _hash_key(prompt: str, params: Dict[str, Any]) -> str:
+    m = hashlib.sha256()
+    m.update(prompt.encode("utf-8"))
+    m.update(json.dumps(params, sort_keys=True).encode("utf-8"))
+    return m.hexdigest()
 
-def _save(obj: dict) -> None:
-    CACHE_FILE.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding="utf-8")
+def get(prompt: str, params: Dict[str, Any]) -> Any | None:
+    key = _hash_key(prompt, params)
+    path = CACHE_DIR / f"{key}.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
 
-def _key_from_prompt(prompt: str, params: dict) -> str:
-    blob = json.dumps({"p": prompt, "params": params}, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-def get(prompt: str, params: dict) -> Any | None:
-    data = _load()
-    key = _key_from_prompt(prompt, params)
-    return data.get(key)
-
-def set(prompt: str, params: dict, value: Any) -> None:
-    data = _load()
-    key = _key_from_prompt(prompt, params)
-    data[key] = value
-    _save(data)
+def set(prompt: str, params: Dict[str, Any], payload: Any):
+    key = _hash_key(prompt, params)
+    path = CACHE_DIR / f"{key}.json"
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[cache] Failed to write {path}: {e}")
