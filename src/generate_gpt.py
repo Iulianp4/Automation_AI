@@ -1,286 +1,371 @@
+# src/generate_gpt.py
+from __future__ import annotations
 import os
-import json
 import time
-from typing import List, Dict, Any
-from dotenv import load_dotenv
-load_dotenv()
+import json
+import re
+from typing import Any, List, Dict
 
 from openai import OpenAI
+from dotenv import load_dotenv
 
-# One-time client init (API key via env)
-# Make sure you have OPENAI_API_KEY in your .env or system env
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# local cache (JSON on disk): src/cache.py
+from src import cache
 
-# Model can be overridden via env OPENAI_MODEL; sensible default below
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+load_dotenv()
 
+# -----------------------------
+# Mini logger helper
+# -----------------------------
+def _log(debug_logger, msg: str):
+    """Log în Streamlit dacă e dat, altfel în stdout dacă AIAI_VERBOSE=1."""
+    try:
+        if debug_logger is not None:
+            debug_logger(msg)
+        elif os.getenv("AIAI_VERBOSE", "0") == "1":
+            print(msg)
+    except Exception:
+        pass
 
-# ---------------- utils: retry + safe call ----------------
-def safe_completion(**kwargs):
+# -----------------------------
+# Model / client
+# -----------------------------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("Missing OPENAI_API_KEY in environment/.env")
+
+MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+# -----------------------------
+# Category mixing
+# -----------------------------
+BASE_CATEGORIES = ["Positive", "Negative", "Boundary", "Security"]
+ALL_CATEGORIES  = BASE_CATEGORIES + ["AdHoc"]
+
+def _distribute_categories(n: int, mix: str = "balanced", allow_adhoc: bool = True) -> List[str]:
     """
-    Thin retry wrapper around client.chat.completions.create
+    Return a list of length n with target categories per test.
+    mix: balanced | positive_heavy | negative_heavy
     """
-    last_err = None
-    for attempt in range(3):
-        try:
-            return client.chat.completions.create(timeout=40, **kwargs)
-        except Exception as e:
-            last_err = e
-            print(f"⚠️ OpenAI call failed (attempt {attempt+1}/3): {e}")
-            time.sleep(2)
-    raise RuntimeError(f"OpenAI API failed after 3 attempts: {last_err}")
+    cats = BASE_CATEGORIES.copy()
+    if allow_adhoc:
+        cats = ALL_CATEGORIES.copy()
 
+    if n <= 0:
+        return []
 
-def _distribute_tests(num_tests: int, mix: str, include_ad_hoc: bool) -> Dict[str, int]:
+    weights = {c: 1.0 for c in cats}
+    if mix == "positive_heavy" and "Positive" in weights:
+        weights["Positive"] = 2.0
+    elif mix == "negative_heavy" and "Negative" in weights:
+        weights["Negative"] = 2.0
+
+    # expand by weights then slice in a pseudo-shuffled order
+    bag: List[str] = []
+    for c, w in weights.items():
+        bag += [c] * int(max(1, round(w * 10)))
+
+    out: List[str] = []
+    idx = 0
+    for _ in range(n):
+        out.append(bag[idx % len(bag)])
+        idx += 7  # pseudo-shuffle step
+    return out[:n]
+
+# -----------------------------
+# Prompt builder
+# -----------------------------
+def _mk_context(requirement_text: str, ac_list: List[str], uc_list: List[str], extra_details: str) -> str:
+    parts: List[str] = []
+    if requirement_text.strip():
+        parts.append(f"REQUIREMENT:\n{requirement_text}")
+    if ac_list:
+        joined = "\n- ".join([a for a in ac_list if str(a).strip()])
+        if joined.strip():
+            parts.append(f"ACCEPTANCE CRITERIA:\n- {joined}")
+    if uc_list:
+        joined = "\n- ".join([u for u in uc_list if str(u).strip()])
+        if joined.strip():
+            parts.append(f"USE CASES:\n- {joined}")
+    if str(extra_details or "").strip():
+        parts.append(f"TESTER DETAILS (extra context):\n{extra_details}")
+    return "\n\n".join(parts).strip()
+
+def _mk_schema_instruction(output_style: str, categories: List[str]) -> str:
     """
-    Returns a dict mapping categories to counts that sum to num_tests.
-    Categories used: Positive, Negative, Boundary, Security (+ AdHoc if allow)
+    Constrângeri clare de ieșire.
     """
-    base_cats = ["Positive", "Negative", "Boundary", "Security"]
-    if include_ad_hoc:
-        base_cats.append("AdHoc")
+    style_hint = {
+        "classic": "Use classic step-by-step style. Gherkin must be empty string.",
+        "gherkin": "Use Given/When/Then. Steps can be empty, but Gherkin must be present.",
+        "both": "Provide both: classic steps AND a Gherkin variant."
+    }.get(output_style, "Provide both: classic steps AND a Gherkin variant.")
 
-    if num_tests <= 0:
-        return {}
+    allowed = ", ".join(ALL_CATEGORIES)
+    return f"""
+You MUST output ONLY a JSON array. No prose, no code fences.
+Each element must be an object with EXACTLY the fields:
+- "title": string (short, imperative)
+- "preconditions": string (can be empty)
+- "steps": string (numbered or bullet steps; can be empty if Gherkin-only)
+- "data": string (inputs/fixtures; can be empty)
+- "expected": string (clear, verifiable outcome)
+- "category": one of [{allowed}]
+- "gherkin": string (Given/When/Then block; can be empty per style)
 
-    # default: balanced among chosen cats
-    if mix == "balanced":
-        cats = base_cats
-        base = num_tests // len(cats)
-        rem = num_tests % len(cats)
-        dist = {c: base for c in cats}
-        for i in range(rem):
-            dist[cats[i]] += 1
-        return dist
+Style requirement: {style_hint}
+Match the requested categories in order: {categories}.
+If content does not allow a category, adapt reasonably but still output the requested number of items.
+"""
 
-    # tilts
-    if mix == "positive_heavy":
-        # 70/20/10 split across Positive/Negative/Boundary, spill to others if present
-        p = max(1, int(round(num_tests * 0.7)))
-        n = max(0, int(round(num_tests * 0.2)))
-        b = max(0, num_tests - (p + n))
-        dist = {"Positive": p, "Negative": n, "Boundary": b}
-    elif mix == "negative_heavy":
-        n = max(1, int(round(num_tests * 0.5)))
-        p = max(0, int(round(num_tests * 0.3)))
-        b = max(0, num_tests - (p + n))
-        dist = {"Positive": p, "Negative": n, "Boundary": b}
-    else:
-        dist = {"Positive": num_tests}
-
-    # if Security/AdHoc exist and we haven't assigned, spread from Boundary/Positive
-    remaining_cats = set(base_cats) - set(dist.keys())
-    for c in remaining_cats:
-        # steal 1 by 1 from the largest bucket until we can allocate at least 1
-        if num_tests <= 2:
-            continue
-        # pick donor
-        donor = max(dist, key=lambda k: dist[k])
-        if dist[donor] > 1:
-            dist[donor] -= 1
-            dist[c] = 1
-
-    # ensure sum == num_tests
-    delta = num_tests - sum(dist.values())
-    while delta != 0:
-        if delta > 0:
-            # add to the currently smallest category to even out
-            target = min(dist, key=lambda k: dist[k])
-            dist[target] += 1
-            delta -= 1
-        else:
-            # remove from largest
-            donor = max(dist, key=lambda k: dist[k])
-            if dist[donor] > 0:
-                dist[donor] -= 1
-                delta += 1
-            else:
-                break
-    return dist
-
-
-def _build_system_prompt(output_style: str) -> str:
-    """
-    Gives strict guidance to keep responses structured & compact.
-    """
-    gherkin_hint = ""
-    if output_style in ("gherkin", "both"):
-        gherkin_hint = (
-            "For each test also include a concise 'gherkin' field with Given/When/Then verification."
-        )
-    return (
-        "You are a senior QA engineer. Generate high-quality UI test cases. "
-        "Be concrete, imperative, and avoid vagueness. "
-        "Output MUST be STRICT JSON (no commentary, no markdown), a list of objects with: "
-        "title, preconditions, steps, data, expected, category"
-        + (", gherkin" if gherkin_hint else "")
-        + ". "
-        "Keep steps as a numbered list string (e.g., '1) ..., 2) ...'). "
-        "Categories allowed: Positive, Negative, Boundary, Security, AdHoc. "
-        + gherkin_hint
-    )
-
-
-def _build_user_prompt(
+def build_prompt(
     requirement_text: str,
     ac_list: List[str],
     uc_list: List[str],
     num_tests: int,
-    dist: Dict[str, int],
     extra_details: str,
     output_style: str,
-    mix: str,
-    include_ad_hoc: bool,
-) -> str:
-    # Plain text context assembly
-    blocks = []
-    if requirement_text.strip():
-        blocks.append(f"REQUIREMENT:\n{requirement_text.strip()}")
-    if ac_list:
-        blocks.append("ACCEPTANCE CRITERIA:\n- " + "\n- ".join([s.strip() for s in ac_list if s.strip()]))
-    if uc_list:
-        blocks.append("USE CASE NOTES:\n- " + "\n- ".join([s.strip() for s in uc_list if s.strip()]))
-    if extra_details.strip():
-        blocks.append(f"EXTRA TESTER DETAILS:\n{extra_details.strip()}")
+    categories: List[str]
+) -> List[Dict[str, str]]:
+    ctx = _mk_context(requirement_text, ac_list, uc_list, extra_details)
+    schema = _mk_schema_instruction(output_style, categories)
 
-    ctx = "\n\n".join(blocks) if blocks else "No upstream text was provided."
+    user = f"""
+Generate {num_tests} UI test cases that cover the context below.
+Focus on realistic web UI actions (click, type, select, navigate) and verifiable expected results.
+Avoid duplicates; diversify flows (happy path, negative, boundary, security, ad-hoc if allowed).
+Ensure the array length matches exactly {num_tests}.
 
-    dist_txt = ", ".join([f"{k}={v}" for k, v in dist.items()])
-    style_txt = (
-        "classic only" if output_style == "classic" else
-        "gherkin only" if output_style == "gherkin" else
-        "both classic and gherkin"
-    )
+CONTEXT:
+{ctx}
+""".strip()
 
-    return (
-        f"{ctx}\n\n"
-        f"Please generate exactly {num_tests} UI test cases distributed as: {dist_txt}. "
-        f"Write them in {style_txt}. "
-        "Each test case must contain fields: title, preconditions, steps, data, expected, category"
-        + (", gherkin" if output_style in ("gherkin", "both") else "")
-        + ". "
-        "Be specific about inputs and verifications. Do not invent backend APIs; keep it UI-level. "
-        "Prefer crisp, atomic steps; avoid multi-action steps. "
-        "Return ONLY valid JSON (a JSON array)."
-    )
+    system = f"""
+You are a senior QA automation engineer. Produce only a pure JSON array with {num_tests} objects.
+Do not include explanations. No markdown. No extra keys. No trailing commas.
+{schema}
+""".strip()
 
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user}
+    ]
 
-def _extract_json_array(text: str) -> Any:
-    """
-    Robust parser that tries strict json first, then extracts codefences if needed.
-    """
+# -----------------------------
+# Robust JSON extractor
+# -----------------------------
+_JSON_ARRAY_RE = re.compile(r"\[\s*{.*?}\s*(?:,\s*{.*?}\s*)*\s*\]", re.DOTALL)
+
+def _clean_fences(s: str) -> str:
+    s = s.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\s*```$", "", s)
+    return s.strip()
+
+def _json_load_attempts(txt: str) -> Any:
     try:
-        return json.loads(text)
+        return json.loads(txt)
     except Exception:
-        # try to find a JSON array within the text
-        start = text.find("[")
-        end = text.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            snippet = text[start:end+1]
-            try:
-                return json.loads(snippet)
-            except Exception:
-                pass
+        pass
+    try:
+        fixed = re.sub(r"(?<!\\)'", '"', txt)
+        return json.loads(fixed)
+    except Exception:
+        pass
+    try:
+        no_trailing = re.sub(r",\s*([}\]])", r"\1", txt)
+        return json.loads(no_trailing)
+    except Exception:
+        raise
+
+def _extract_json_array(raw_text: str) -> List[dict]:
+    if not isinstance(raw_text, str):
+        raise ValueError("Model returned non-text content.")
+    s = raw_text.strip()
+
+    # 1) direct
+    try:
+        obj = _json_load_attempts(s)
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict) and isinstance(obj.get("items"), list):
+            return obj["items"]
+    except Exception:
+        pass
+
+    # 2) code fences
+    try:
+        cleaned = _clean_fences(s)
+        obj = _json_load_attempts(cleaned)
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict) and isinstance(obj.get("items"), list):
+            return obj["items"]
+    except Exception:
+        pass
+
+    # 3) first array via regex
+    m = _JSON_ARRAY_RE.search(s)
+    if m:
+        block = _clean_fences(m.group(0))
+        obj = _json_load_attempts(block)
+        if isinstance(obj, list):
+            return obj
+
     raise ValueError("Model did not return valid JSON array.")
 
+# -----------------------------
+# Normalize output rows
+# -----------------------------
+def _norm_str(x: Any) -> str:
+    return str(x or "").replace("\u00A0", " ").strip()
 
-def _normalize_case_obj(obj: Dict[str, Any], want_gherkin: bool) -> Dict[str, str]:
-    def _g(key):  # get & strip
-        return str(obj.get(key, "") or "").replace("\u00A0", " ").strip()
-
-    out = {
-        "title": _g("title"),
-        "preconditions": _g("preconditions"),
-        "steps": _g("steps"),
-        "data": _g("data"),
-        "expected": _g("expected"),
-        "category": _g("category") or "Positive",
+def _ensure_row_fields(o: dict) -> dict:
+    return {
+        "title": _norm_str(o.get("title", "")),
+        "preconditions": _norm_str(o.get("preconditions", "")),
+        "steps": _norm_str(o.get("steps", "")),
+        "data": _norm_str(o.get("data", "")),
+        "expected": _norm_str(o.get("expected", "")),
+        "category": _norm_str(o.get("category", "Positive")) or "Positive",
+        "gherkin": _norm_str(o.get("gherkin", "")),
     }
-    if want_gherkin:
-        out["gherkin"] = _g("gherkin")
-    else:
-        out["gherkin"] = ""
-    return out
 
+# -----------------------------
+# Call wrapper with retry
+# -----------------------------
+def _openai_chat(
+    messages: List[Dict[str, str]],
+    *,
+    temperature: float,
+    timeout_s: int,
+    seed: int | None,
+    retries: int = 2,
+    debug_logger=None
+):
+    """
+    Small wrapper with simple backoff retry.
+    """
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            _log(debug_logger, f"OpenAI call attempt {attempt+1}/{retries+1}")
+            return client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                temperature=temperature,
+                seed=seed,           # reproducibility if provided (OpenAI v1 supports it)
+                timeout=timeout_s,   # per-request timeout (works with httpx transport)
+            )
+        except Exception as e:
+            _log(debug_logger, f"OpenAI error: {e!s}")
+            last_err = e
+            if attempt < retries:
+                time.sleep(1.5 * (attempt + 1))
+                _log(debug_logger, "Retrying...")
+            else:
+                raise last_err
 
-# ---------------- main generation entry ----------------
+# -----------------------------
+# Public API
+# -----------------------------
 def generate_with_gpt(
     requirement_text: str,
-    ac_list: List[str],
-    uc_list: List[str],
+    ac_list: List[str] | None,
+    uc_list: List[str] | None,
     num_tests: int = 5,
     extra_details: str = "",
-    output_style: str = "both",           # classic / gherkin / both
+    output_style: str = "both",              # classic | gherkin | both
     include_ad_hoc: bool = True,
-    mix: str = "balanced",                # balanced / positive_heavy / negative_heavy
-) -> List[Dict[str, str]]:
+    mix: str = "balanced",                    # balanced | positive_heavy | negative_heavy
+    temperature: float = 0.2,
+    timeout_s: int = 60,
+    seed: int | None = None,                  # reproducibility knob (optional)
+    debug_logger=None,                        # UI logger (e.g., Streamlit toast)
+) -> List[dict]:
     """
-    Returns a list of {title, preconditions, steps, data, expected, category, gherkin}
+    Returns a list of normalized test-case dicts.
     """
-    num_tests = max(1, int(num_tests or 1))
-    dist = _distribute_tests(num_tests, mix=mix, include_ad_hoc=include_ad_hoc)
+    ac_list = [str(x) for x in (ac_list or []) if str(x).strip()]
+    uc_list = [str(x) for x in (uc_list or []) if str(x).strip()]
+    requirement_text = _norm_str(requirement_text)
+    extra_details = _norm_str(extra_details)
 
-    system_msg = _build_system_prompt(output_style)
-    user_msg = _build_user_prompt(
-        requirement_text=requirement_text or "",
-        ac_list=ac_list or [],
-        uc_list=uc_list or [],
+    if num_tests <= 0:
+        return []
+
+    categories = _distribute_categories(num_tests, mix=mix, allow_adhoc=include_ad_hoc)
+    messages = build_prompt(
+        requirement_text=requirement_text,
+        ac_list=ac_list,
+        uc_list=uc_list,
         num_tests=num_tests,
-        dist=dist,
-        extra_details=extra_details or "",
+        extra_details=extra_details,
         output_style=output_style,
-        mix=mix,
-        include_ad_hoc=include_ad_hoc,
+        categories=categories
     )
 
-    resp = safe_completion(
-        model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ],
-        temperature=0.3,
-        response_format={"type": "json_object"} if OPENAI_MODEL.startswith("gpt-4.1") else None,  # optional
+    # ----------------- cache check -----------------
+    params_for_cache = {
+        "model": MODEL,
+        "num_tests": num_tests,
+        "output_style": output_style,
+        "include_ad_hoc": include_ad_hoc,
+        "mix": mix,
+        "temperature": float(temperature),
+        "timeout_s": int(timeout_s),
+        "seed": int(seed) if isinstance(seed, int) else None,
+        "categories": categories,
+    }
+    key_prompt = json.dumps(messages, ensure_ascii=False, sort_keys=True)
+    hit = cache.get(key_prompt, params_for_cache)
+    if hit is not None:
+        _log(debug_logger, "cache: HIT ✅")
+        return [_ensure_row_fields(o) for o in (hit if isinstance(hit, list) else [])]
+
+    _log(debug_logger, "cache: MISS → calling OpenAI ⏳")
+    # ------------- call OpenAI -------------
+    resp = _openai_chat(
+        messages,
+        temperature=temperature,
+        timeout_s=timeout_s,
+        seed=seed,
+        retries=2,
+        debug_logger=debug_logger
     )
+    raw_text = resp.choices[0].message.content
 
-    # print usage for cost awareness
-    usage = getattr(resp, "usage", None)
-    if usage:
-        prompt_toks = getattr(usage, "prompt_tokens", 0)
-        comp_toks = getattr(usage, "completion_tokens", 0)
-        total_toks = getattr(usage, "total_tokens", 0)
-        print(f"ℹ️ Tokens used: prompt={prompt_toks}, completion={comp_toks}, total={total_toks}")
+    try:
+        payload = _extract_json_array(raw_text)
+    except ValueError:
+        _log(debug_logger, "Strict retry with harder JSON constraint…")
+        strict_suffix = (
+            "\nIMPORTANT: Return ONLY a JSON array of objects as specified. "
+            "No natural language, no markdown, no extra keys. "
+            "If unsure, output just the array."
+        )
+        resp2 = _openai_chat(
+            messages + [{"role": "system", "content": strict_suffix}],
+            temperature=temperature,
+            timeout_s=timeout_s,
+            seed=seed,
+            retries=1,
+            debug_logger=debug_logger
+        )
+        raw_text2 = resp2.choices[0].message.content
+        payload = _extract_json_array(raw_text2)
 
-    raw_text = resp.choices[0].message.content or ""
-    payload = _extract_json_array(raw_text)
+    # Normalize rows & ensure count (if model sent more/less, we clamp/pad)
+    rows = [_ensure_row_fields(o) for o in payload if isinstance(o, dict)]
+    if len(rows) > num_tests:
+        rows = rows[:num_tests]
+    elif len(rows) < num_tests:
+        for _ in range(num_tests - len(rows)):
+            rows.append(_ensure_row_fields({}))
 
-    if not isinstance(payload, list):
-        raise ValueError("Model returned JSON but not a list.")
-
-    want_gherkin = output_style in ("gherkin", "both")
-    cases: List[Dict[str, str]] = []
-    for item in payload:
-        try:
-            norm = _normalize_case_obj(item, want_gherkin=want_gherkin)
-            cases.append(norm)
-        except Exception:
-            continue
-
-    # Keep at most num_tests in case the model overshot
-    if len(cases) > num_tests:
-        cases = cases[:num_tests]
-
-    # If model undershot, pad with minimal positive stubs (rare)
-    while len(cases) < num_tests:
-        idx = len(cases) + 1
-        cases.append({
-            "title": f"Auto-generated test {idx}",
-            "preconditions": "",
-            "steps": "1) Do the main user action\n2) Observe system output",
-            "data": "",
-            "expected": "System responds as per requirement.",
-            "category": "Positive",
-            "gherkin": "" if not want_gherkin else "Given context\nWhen user performs main action\nThen system responds per requirement",
-        })
-
-    return cases
+    # ----------------- cache store -----------------
+    cache.set(key_prompt, params_for_cache, rows)
+    _log(debug_logger, f"cache: STORE ({len(rows)} cases) 💾")
+    return rows

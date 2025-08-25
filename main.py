@@ -44,7 +44,7 @@ def _clean_text(x: str) -> str:
 def ask_int(prompt_text, default_val):
     try:
         s = input(f"{prompt_text} (default {default_val}): ").strip()
-        return int(s) if s.isdigit() and int(s) > 0 else default_val
+        return int(s) if s.isdigit() and int(s) >= 0 else default_val
     except Exception:
         return default_val
 
@@ -248,7 +248,11 @@ def export_excel(gen_df_internal: pd.DataFrame, out_path: Path, meta: dict | Non
 
 
 # ====================== generators ======================
-def generate_from_requirements(req_df: pd.DataFrame, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
+def generate_from_requirements(
+    req_df: pd.DataFrame, num_tests: int,
+    output_style: str, include_ad_hoc: bool, mix: str,
+    *, temperature: float, seed: int | None
+) -> pd.DataFrame:
     rows = []
     for _, r in req_df.iterrows():
         rid   = _clean_text(r.get("requirement_id", ""))
@@ -265,7 +269,8 @@ def generate_from_requirements(req_df: pd.DataFrame, num_tests: int, output_styl
         cases = generate_with_gpt(
             rtext, ac_list, uc_list, num_tests=num_tests,
             extra_details=details, output_style=output_style,
-            include_ad_hoc=include_ad_hoc, mix=mix
+            include_ad_hoc=include_ad_hoc, mix=mix,
+            temperature=temperature, seed=seed
         )
         for i, c in enumerate(cases, start=1):
             rows.append({
@@ -284,7 +289,11 @@ def generate_from_requirements(req_df: pd.DataFrame, num_tests: int, output_styl
     return pd.DataFrame(rows)
 
 
-def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
+def generate_from_acceptance_row(
+    ac_df: pd.DataFrame, req_name_map: dict, num_tests: int,
+    output_style: str, include_ad_hoc: bool, mix: str,
+    *, temperature: float, seed: int | None
+) -> pd.DataFrame:
     rows = []
     for _, r in ac_df.iterrows():
         rid = _clean_text(r.get("requirement_id",""))
@@ -298,7 +307,8 @@ def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_te
         cases = generate_with_gpt(
             "", ac_list, [], num_tests=num_tests,
             extra_details=details, output_style=output_style,
-            include_ad_hoc=include_ad_hoc, mix=mix
+            include_ad_hoc=include_ad_hoc, mix=mix,
+            temperature=temperature, seed=seed
         )
         for i, c in enumerate(cases, 1):
             rows.append({
@@ -317,7 +327,11 @@ def generate_from_acceptance_row(ac_df: pd.DataFrame, req_name_map: dict, num_te
     return pd.DataFrame(rows)
 
 
-def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
+def generate_from_acceptance_group(
+    ac_df: pd.DataFrame, req_name_map: dict, num_tests: int,
+    output_style: str, include_ad_hoc: bool, mix: str,
+    *, temperature: float, seed: int | None
+) -> pd.DataFrame:
     rows = []
     for rid, grp in ac_df.groupby("requirement_id"):
         ac_list = _ensure_list(grp["ac_text"].astype(str).tolist())
@@ -329,7 +343,8 @@ def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_
         cases = generate_with_gpt(
             "", ac_list, [], num_tests=num_tests,
             extra_details=details, output_style=output_style,
-            include_ad_hoc=include_ad_hoc, mix=mix
+            include_ad_hoc=include_ad_hoc, mix=mix,
+            temperature=temperature, seed=seed
         )
         for i, c in enumerate(cases, 1):
             rows.append({
@@ -348,7 +363,11 @@ def generate_from_acceptance_group(ac_df: pd.DataFrame, req_name_map: dict, num_
     return pd.DataFrame(rows)
 
 
-def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
+def generate_from_use_cases_row(
+    uc_df: pd.DataFrame, req_name_map: dict, num_tests: int,
+    output_style: str, include_ad_hoc: bool, mix: str,
+    *, temperature: float, seed: int | None
+) -> pd.DataFrame:
     rows = []
     for _, r in uc_df.iterrows():
         rid = _clean_text(r.get("requirement_id",""))
@@ -362,7 +381,8 @@ def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tes
         cases = generate_with_gpt(
             "", [], uc_list, num_tests=num_tests,
             extra_details=details, output_style=output_style,
-            include_ad_hoc=include_ad_hoc, mix=mix
+            include_ad_hoc=include_ad_hoc, mix=mix,
+            temperature=temperature, seed=seed
         )
         for i, c in enumerate(cases, 1):
             rows.append({
@@ -381,7 +401,11 @@ def generate_from_use_cases_row(uc_df: pd.DataFrame, req_name_map: dict, num_tes
     return pd.DataFrame(rows)
 
 
-def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_tests: int, output_style: str, include_ad_hoc: bool, mix: str) -> pd.DataFrame:
+def generate_from_use_cases_group(
+    uc_df: pd.DataFrame, req_name_map: dict, num_tests: int,
+    output_style: str, include_ad_hoc: bool, mix: str,
+    *, temperature: float, seed: int | None
+) -> pd.DataFrame:
     rows = []
     for rid, grp in uc_df.groupby("requirement_id"):
         uc_list = _ensure_list(grp["uc_text"].astype(str).tolist())
@@ -393,7 +417,8 @@ def generate_from_use_cases_group(uc_df: pd.DataFrame, req_name_map: dict, num_t
         cases = generate_with_gpt(
             "", [], uc_list, num_tests=num_tests,
             extra_details=details, output_style=output_style,
-            include_ad_hoc=include_ad_hoc, mix=mix
+            include_ad_hoc=include_ad_hoc, mix=mix,
+            temperature=temperature, seed=seed
         )
         for i, c in enumerate(cases, 1):
             rows.append({
@@ -449,23 +474,40 @@ def _load_ai_from_results(results_dir: Path) -> pd.DataFrame:
 def main():
     # knobs (interactive or fixed defaults)
     if INTERACTIVE:
-        num_req = ask_int("How many tests per REQUIREMENT row?", DEFAULTS["num_req"])
-        num_ac  = ask_int(f"How many tests per ACCEPTANCE CRITERIA ({'GROUP' if AC_MODE=='group' else 'ROW'})?", DEFAULTS["num_ac"])
-        num_uc  = ask_int(f"How many tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})?", DEFAULTS["num_uc"])
+        num_req = ask_int("How many tests per REQUIREMENT row?", DEFAULTS.get("num_req", 5))
+        num_ac  = ask_int(f"How many tests per ACCEPTANCE CRITERIA ({'GROUP' if AC_MODE=='group' else 'ROW'})?", DEFAULTS.get("num_ac", 5))
+        num_uc  = ask_int(f"How many tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})?", DEFAULTS.get("num_uc", 5))
 
-        output_style   = ask_choice("Output style? (classic/gherkin/both)", ["classic","gherkin","both"], DEFAULTS["output_style"])
+        output_style   = ask_choice("Output style? (classic/gherkin/both)", ["classic","gherkin","both"], DEFAULTS.get("output_style","both"))
         include_ad_hoc = (ask_choice("Allow AdHoc category? (yes/no)", ["yes","no"], "yes") == "yes")
-        mix            = ask_choice("Test mix? (balanced/positive_heavy/negative_heavy)", ["balanced","positive_heavy","negative_heavy"], DEFAULTS["mix"])
+        mix            = ask_choice("Test mix? (balanced/positive_heavy/negative_heavy)", ["balanced","positive_heavy","negative_heavy"], DEFAULTS.get("mix","balanced"))
+
+        # NEW: model knobs
+        try:
+            t_in = input(f"Temperature 0.0–1.2 (default {DEFAULTS.get('temperature', 0.2)}): ").strip()
+            temperature = float(t_in) if t_in else float(DEFAULTS.get("temperature", 0.2))
+        except Exception:
+            temperature = float(DEFAULTS.get("temperature", 0.2))
+
+        try:
+            s_in = input(f"Random seed (0 = auto, default {DEFAULTS.get('seed', 0)}): ").strip()
+            s_val = int(s_in) if s_in else int(DEFAULTS.get("seed", 0))
+            seed = None if s_val == 0 else s_val
+        except Exception:
+            seed = None
 
         compare_only   = (ask_choice("Run comparison only (skip generation)?", ["yes","no"], "no") == "yes")
     else:
-        num_req = DEFAULTS["num_req"]
-        num_ac  = DEFAULTS["num_ac"]
-        num_uc  = DEFAULTS["num_uc"]
-        output_style   = DEFAULTS["output_style"]
-        include_ad_hoc = DEFAULTS["include_ad_hoc"]
-        mix            = DEFAULTS["mix"]
-        compare_only   = DEFAULTS["compare_only"]
+        num_req = DEFAULTS.get("num_req", 5)
+        num_ac  = DEFAULTS.get("num_ac", 5)
+        num_uc  = DEFAULTS.get("num_uc", 5)
+        output_style   = DEFAULTS.get("output_style", "both")
+        include_ad_hoc = DEFAULTS.get("include_ad_hoc", True)
+        mix            = DEFAULTS.get("mix", "balanced")
+        compare_only   = DEFAULTS.get("compare_only", False)
+        temperature    = float(DEFAULTS.get("temperature", 0.2))
+        s_val          = int(DEFAULTS.get("seed", 0))
+        seed           = None if s_val == 0 else s_val
 
     # inputs
     req_only = preprocess.read_requirements()
@@ -509,6 +551,8 @@ def main():
         "Output style": output_style,
         "AdHoc allowed": include_ad_hoc,
         "Mix": mix,
+        "Temperature": temperature,
+        "Seed": seed,
     }
 
     # ===== generation flow (skipped if compare_only and we loaded AI) =====
@@ -516,7 +560,8 @@ def main():
         if has_req:
             req_df, _, _ = preprocess.load_all()
             df_req = generate_from_requirements(
-                req_df, num_tests=num_req, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix
+                req_df, num_tests=num_req, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
+                temperature=temperature, seed=seed
             )
             export_excel(
                 df_req,
@@ -528,12 +573,14 @@ def main():
         if has_ac:
             if AC_MODE == "group":
                 df_ac = generate_from_acceptance_group(
-                    ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix
+                    ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
+                    temperature=temperature, seed=seed
                 )
                 src_label = "Acceptance (group)"
             else:
                 df_ac = generate_from_acceptance_row(
-                    ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix
+                    ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
+                    temperature=temperature, seed=seed
                 )
                 src_label = "Acceptance (per-row)"
             export_excel(
@@ -546,12 +593,14 @@ def main():
         if has_uc:
             if UC_MODE == "group":
                 df_uc = generate_from_use_cases_group(
-                    uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix
+                    uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
+                    temperature=temperature, seed=seed
                 )
                 src_label = "Use Cases (group)"
             else:
                 df_uc = generate_from_use_cases_row(
-                    uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix
+                    uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
+                    temperature=temperature, seed=seed
                 )
                 src_label = "Use Cases (per-row)"
             export_excel(
@@ -614,7 +663,7 @@ def main():
                 manual_only=cmp_res["manual_only"],
                 scores_summary=cmp_res["scores_summary"],
                 dist_by_category=cmp_res["dist_by_category"],
-                per_req_density=cmp_res["per_requirement_density"],
+                per_requirement_density=cmp_res["per_requirement_density"],
                 trace_matrix=cmp_res["trace_matrix"],
                 run_info={
                     "strategy": strategy,
