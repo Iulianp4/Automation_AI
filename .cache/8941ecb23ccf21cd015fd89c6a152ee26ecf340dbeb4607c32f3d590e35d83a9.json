@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Sort column and verify arrow icon",
+    "preconditions": "User is on the data table page.",
+    "steps": "1. Locate the column header to be sorted.\n2. Click on the column header to sort in ascending order.\n3. Observe the arrow icon indicating sort direction.\n4. Click on the same column header again to sort in descending order.\n5. Observe the arrow icon indicating the updated sort direction.",
+    "data": "",
+    "expected": "The arrow icon changes direction with each click, indicating the current sort order.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

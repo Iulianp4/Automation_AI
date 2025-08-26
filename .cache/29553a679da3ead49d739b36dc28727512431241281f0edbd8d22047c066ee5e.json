@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Export data and verify email link for large file",
+    "preconditions": "User is logged in and has data ready for export.",
+    "steps": "1. Navigate to the data export page.\n2. Select the data to export.\n3. Click on the 'Export' button.\n4. Wait for the export process to complete.",
+    "data": "Data size exceeds 50MB.",
+    "expected": "User receives an email with a download link for the exported file.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

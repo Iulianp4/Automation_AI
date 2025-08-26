@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Apply filter and verify data update",
+    "preconditions": "User is logged into the application and is on the data overview page.",
+    "steps": "1. Locate the filter dropdown menu.\n2. Select a filter option from the dropdown.\n3. Click the 'Apply' button.\n4. Observe the data displayed on the page.",
+    "data": "Filter option: 'Active Users'",
+    "expected": "The data displayed updates to show only active users without a full page reload.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

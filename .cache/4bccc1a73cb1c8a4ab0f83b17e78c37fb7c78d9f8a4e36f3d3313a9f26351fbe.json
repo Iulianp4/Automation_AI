@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Submit form with high numeric value",
+    "preconditions": "User is on the form submission page.",
+    "steps": "1. Locate the numeric input field.\n2. Enter a value greater than the maximum allowed threshold.\n3. Click the submit button.",
+    "data": "1001",
+    "expected": "A warning message 'Value too high' is displayed and the form is not submitted.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

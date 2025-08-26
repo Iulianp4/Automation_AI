@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Open Print Preview",
+    "preconditions": "User is on the webpage with the 'Print' button visible.",
+    "steps": "1. Locate the 'Print' button on the webpage.\n2. Click the 'Print' button.",
+    "data": "",
+    "expected": "The print preview opens displaying a simplified, print-optimized layout without navigation and ads.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

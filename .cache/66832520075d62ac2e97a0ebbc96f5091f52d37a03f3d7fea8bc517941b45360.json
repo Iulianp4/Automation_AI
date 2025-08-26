@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify invalid login displays error message",
+    "preconditions": "User is on the login page.",
+    "steps": "1. Enter an invalid email address in the email field.\n2. Enter an incorrect password in the password field.\n3. Click the 'Login' button.",
+    "data": "Email: invalid@example.com, Password: wrongpassword",
+    "expected": "An error message 'Email or password is incorrect' is displayed and the password field is cleared.",
+    "category": "Negative",
+    "gherkin": ""
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Confirm deletion action",
+    "preconditions": "User is logged in and on the item management page.",
+    "steps": "1. Locate the item to delete.\n2. Click on the 'Delete' button next to the item.\n3. Observe the confirmation dialog that appears.",
+    "data": "",
+    "expected": "The confirmation dialog displays a warning message indicating that the deletion is irreversible.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

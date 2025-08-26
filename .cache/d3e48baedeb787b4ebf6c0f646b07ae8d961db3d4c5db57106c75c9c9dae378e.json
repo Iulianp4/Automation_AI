@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify search results pagination",
+    "preconditions": "User is on the homepage and has entered a search term that returns results.",
+    "steps": "1. Enter a search term in the search bar. 2. Click the search button. 3. Verify that the results are displayed. 4. Check that the results are paginated with 20 results per page. 5. Click on the next page button. 6. Verify that the next set of results is displayed.",
+    "data": "Search term: 'test'",
+    "expected": "The search results are displayed with 20 results per page, and clicking the next page button shows the next set of results.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

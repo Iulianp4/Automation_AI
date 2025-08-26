@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify layout adjusts for mobile view on window resize",
+    "preconditions": "User is on the main page of the application.",
+    "steps": "1. Open the application in a desktop browser.\n2. Resize the browser window to a smaller width (e.g., 400px).\n3. Observe the layout changes.",
+    "data": "",
+    "expected": "The layout adjusts to fit the mobile view, with elements stacking vertically and navigation accessible.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

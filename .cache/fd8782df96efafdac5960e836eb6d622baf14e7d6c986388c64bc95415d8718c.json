@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify toast notification on data save",
+    "preconditions": "User is logged in and on the data entry page.",
+    "steps": "1. Fill in the required fields with valid data.\n2. Click the 'Save' button.",
+    "data": "Name: John Doe, Email: john.doe@example.com",
+    "expected": "A toast notification appears with the message 'Saved successfully'.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

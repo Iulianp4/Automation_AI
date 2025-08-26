@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Validate form input error messages",
+    "preconditions": "User is on the form page.",
+    "steps": "1. Click on the input field for 'Email'.\n2. Type an invalid email format (e.g., 'user@').\n3. Click outside the input field to trigger validation.",
+    "data": "Email: user@",
+    "expected": "The 'Email' field is highlighted in red and an error message 'Please enter a valid email address.' is displayed immediately after the input.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

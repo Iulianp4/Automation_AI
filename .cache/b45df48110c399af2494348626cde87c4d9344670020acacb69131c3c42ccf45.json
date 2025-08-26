@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify no results message and filtering suggestions",
+    "preconditions": "User is on the search results page with no results available.",
+    "steps": "1. Enter a search term that yields no results. 2. Click on the search button. 3. Observe the results area.",
+    "data": "search term: 'xyz123'",
+    "expected": "The message 'No results' is displayed along with filtering suggestions.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Submit user feedback through contact form",
+    "preconditions": "User is on the contact page",
+    "steps": "1. Fill in the name field with 'John Doe'\n2. Fill in the email field with 'john.doe@example.com'\n3. Fill in the feedback field with 'Great service!'\n4. Click the 'Submit' button",
+    "data": "",
+    "expected": "A confirmation message is displayed on the screen and a confirmation email is sent to 'john.doe@example.com' containing the ticket number, submitted details, and expected response time.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

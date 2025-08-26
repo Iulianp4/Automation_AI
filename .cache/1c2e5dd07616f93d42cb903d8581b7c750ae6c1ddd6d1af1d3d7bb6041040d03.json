@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Copy text from table",
+    "preconditions": "User is logged in and on the table page.",
+    "steps": "1. Locate the table on the page.\n2. Select a cell in the table.\n3. Right-click on the selected cell.\n4. Choose 'Copy' from the context menu.\n5. Paste the copied content into a plain text editor.",
+    "data": "",
+    "expected": "The pasted content should match the plain text of the cell without any styling or formatting.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

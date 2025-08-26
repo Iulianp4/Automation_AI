@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Upload an image and verify resizing",
+    "preconditions": "User is logged in and on the image upload page.",
+    "steps": "1. Click on the 'Upload Image' button.\n2. Select an image file larger than 2MB from the file dialog.\n3. Click 'Open' to upload the image.\n4. Wait for the upload to complete.",
+    "data": "Image file size: 3MB",
+    "expected": "The image is uploaded successfully and resized to a maximum of 2MB without losing quality.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

@@ -41,6 +41,8 @@ DEFAULTS = {
     "include_ad_hoc": True,
     "mix": "balanced",                # balanced / positive_heavy / negative_heavy
     "compare_only": False,
+    "temperature": 0.2,
+    "seed": 0,
     "do_comparison": True,
     "similarity_strategy": "title_expected",  # title_expected / title_steps_expected
     "similarity_threshold": 0.75,

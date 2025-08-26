@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Validate email input field",
+    "preconditions": "User is on the registration page.",
+    "steps": "1. Locate the email input field. 2. Enter a valid email address. 3. Click the submit button.",
+    "data": "testuser@example.com",
+    "expected": "User is successfully registered and redirected to the welcome page.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

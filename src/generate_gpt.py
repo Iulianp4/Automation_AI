@@ -4,7 +4,7 @@ import os
 import time
 import json
 import re
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional, Callable
 
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -17,7 +17,7 @@ load_dotenv()
 # -----------------------------
 # Mini logger helper
 # -----------------------------
-def _log(debug_logger, msg: str):
+def _log(debug_logger: Optional[Callable[[str], None]], msg: str):
     """Log în Streamlit dacă e dat, altfel în stdout dacă AIAI_VERBOSE=1."""
     try:
         if debug_logger is not None:
@@ -34,7 +34,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("Missing OPENAI_API_KEY in environment/.env")
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# default global (poate fi suprascris prin parametru la runtime)
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # -----------------------------
@@ -44,33 +45,23 @@ BASE_CATEGORIES = ["Positive", "Negative", "Boundary", "Security"]
 ALL_CATEGORIES  = BASE_CATEGORIES + ["AdHoc"]
 
 def _distribute_categories(n: int, mix: str = "balanced", allow_adhoc: bool = True) -> List[str]:
-    """
-    Return a list of length n with target categories per test.
-    mix: balanced | positive_heavy | negative_heavy
-    """
-    cats = BASE_CATEGORIES.copy()
-    if allow_adhoc:
-        cats = ALL_CATEGORIES.copy()
-
+    """Return a list of length n with target categories per test."""
+    cats = ALL_CATEGORIES.copy() if allow_adhoc else BASE_CATEGORIES.copy()
     if n <= 0:
         return []
-
     weights = {c: 1.0 for c in cats}
     if mix == "positive_heavy" and "Positive" in weights:
         weights["Positive"] = 2.0
     elif mix == "negative_heavy" and "Negative" in weights:
         weights["Negative"] = 2.0
-
-    # expand by weights then slice in a pseudo-shuffled order
     bag: List[str] = []
     for c, w in weights.items():
         bag += [c] * int(max(1, round(w * 10)))
-
     out: List[str] = []
     idx = 0
     for _ in range(n):
         out.append(bag[idx % len(bag)])
-        idx += 7  # pseudo-shuffle step
+        idx += 7
     return out[:n]
 
 # -----------------------------
@@ -93,9 +84,6 @@ def _mk_context(requirement_text: str, ac_list: List[str], uc_list: List[str], e
     return "\n\n".join(parts).strip()
 
 def _mk_schema_instruction(output_style: str, categories: List[str]) -> str:
-    """
-    Constrângeri clare de ieșire.
-    """
     style_hint = {
         "classic": "Use classic step-by-step style. Gherkin must be empty string.",
         "gherkin": "Use Given/When/Then. Steps can be empty, but Gherkin must be present.",
@@ -241,23 +229,22 @@ def _openai_chat(
     *,
     temperature: float,
     timeout_s: int,
-    seed: int | None,
+    seed: Optional[int],
     retries: int = 2,
-    debug_logger=None
+    model: Optional[str] = None,
+    debug_logger: Optional[Callable[[str], None]] = None,
 ):
-    """
-    Small wrapper with simple backoff retry.
-    """
+    """Small wrapper with simple backoff retry."""
     last_err = None
     for attempt in range(retries + 1):
         try:
             _log(debug_logger, f"OpenAI call attempt {attempt+1}/{retries+1}")
             return client.chat.completions.create(
-                model=MODEL,
+                model=model or DEFAULT_MODEL,
                 messages=messages,
                 temperature=temperature,
-                seed=seed,           # reproducibility if provided (OpenAI v1 supports it)
-                timeout=timeout_s,   # per-request timeout (works with httpx transport)
+                seed=None if (seed in (None, 0)) else int(seed),
+                timeout=timeout_s,
             )
         except Exception as e:
             _log(debug_logger, f"OpenAI error: {e!s}")
@@ -282,8 +269,9 @@ def generate_with_gpt(
     mix: str = "balanced",                    # balanced | positive_heavy | negative_heavy
     temperature: float = 0.2,
     timeout_s: int = 60,
-    seed: int | None = None,                  # reproducibility knob (optional)
-    debug_logger=None,                        # UI logger (e.g., Streamlit toast)
+    seed: Optional[int] = None,               # reproducibility knob (optional)
+    model: Optional[str] = None,              # NEW: override model at call-site (UI)
+    debug_logger: Optional[Callable[[str], None]] = None,
 ) -> List[dict]:
     """
     Returns a list of normalized test-case dicts.
@@ -309,7 +297,7 @@ def generate_with_gpt(
 
     # ----------------- cache check -----------------
     params_for_cache = {
-        "model": MODEL,
+        "model": model or DEFAULT_MODEL,
         "num_tests": num_tests,
         "output_style": output_style,
         "include_ad_hoc": include_ad_hoc,
@@ -333,6 +321,7 @@ def generate_with_gpt(
         timeout_s=timeout_s,
         seed=seed,
         retries=2,
+        model=model,
         debug_logger=debug_logger
     )
     raw_text = resp.choices[0].message.content
@@ -340,7 +329,7 @@ def generate_with_gpt(
     try:
         payload = _extract_json_array(raw_text)
     except ValueError:
-        _log(debug_logger, "Strict retry with harder JSON constraint…")
+        _log(debug_logger, "⚠ Model output was not a valid JSON array. Strict retry…")
         strict_suffix = (
             "\nIMPORTANT: Return ONLY a JSON array of objects as specified. "
             "No natural language, no markdown, no extra keys. "
@@ -352,6 +341,7 @@ def generate_with_gpt(
             timeout_s=timeout_s,
             seed=seed,
             retries=1,
+            model=model,
             debug_logger=debug_logger
         )
         raw_text2 = resp2.choices[0].message.content

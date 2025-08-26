@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Select multiple rows and verify toolbar display",
+    "preconditions": "User is logged in and on the table page.",
+    "steps": "1. Navigate to the table page. 2. Select the first row. 3. Select the second row. 4. Observe the UI.",
+    "data": "",
+    "expected": "A contextual toolbar with available bulk actions is displayed.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

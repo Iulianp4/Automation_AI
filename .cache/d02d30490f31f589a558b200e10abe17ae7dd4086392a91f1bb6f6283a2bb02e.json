@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify progressive data loading for large dataset",
+    "preconditions": "User is logged into the application and has access to the dataset page.",
+    "steps": "1. Navigate to the dataset page.\n2. Scroll down to the bottom of the page.\n3. Observe the loading behavior as more data is fetched.",
+    "data": "",
+    "expected": "The application should load additional rows progressively without freezing or crashing, and the total number of rows displayed should exceed 1000.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

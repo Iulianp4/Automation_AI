@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Right-click on a row to display context menu",
+    "preconditions": "User is logged in and on the main page with a list of items.",
+    "steps": "1. Locate a row in the item list. 2. Right-click on the selected row.",
+    "data": "",
+    "expected": "A context menu appears with options relevant to the selected item.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Complete checkout with valid card payment",
+    "preconditions": "User is logged in and has a valid cart with shipping information.",
+    "steps": "1. Navigate to the checkout page. 2. Click on 'Pay' button. 3. Enter valid card details. 4. Complete 3-D Secure authentication if prompted. 5. Confirm payment.",
+    "data": "Card number: 4111 1111 1111 1111, Expiry date: 12/25, CVV: 123",
+    "expected": "Order confirmation page is displayed with order number and summary. Confirmation email is sent. Stock is reserved.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

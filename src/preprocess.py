@@ -257,3 +257,21 @@ def read_manual_cases() -> pd.DataFrame:
     df = df[mask_keep].reset_index(drop=True)
 
     return df
+
+   # --- Validation helpers (UI-facing) ---
+def validate_columns(df: pd.DataFrame, required: list[str], label: str) -> dict:
+    """
+    Return a dict with validation info:
+      { "ok": bool, "missing": [..], "present": [..], "label": str, "rows": int }
+    Doesn't raise; the UI decides how to display.
+    """
+    present = [c for c in required if c in df.columns]
+    missing = [c for c in required if c not in df.columns]
+    return {
+        "ok": len(missing) == 0,
+        "missing": missing,
+        "present": present,
+        "label": label,
+        "rows": int(len(df) if df is not None else 0),
+    }
+ 

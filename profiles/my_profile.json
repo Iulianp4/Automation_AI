@@ -1,0 +1,13 @@
+{
+  "num_req": 5,
+  "num_ac": 5,
+  "num_uc": 5,
+  "output_style": "both",
+  "include_ad_hoc": true,
+  "mix": "balanced",
+  "temperature": 0.2,
+  "seed": 0,
+  "similarity_strategy": "title_expected",
+  "similarity_threshold": 0.75,
+  "use_uploaded": "Existing /data"
+}

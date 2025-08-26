@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Click site logo to navigate to home page",
+    "preconditions": "User is on any page of the website",
+    "steps": "1. Locate the site logo on the page.\n2. Click on the site logo.",
+    "data": "",
+    "expected": "User is redirected to the home page.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

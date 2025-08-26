@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Create and edit document offline",
+    "preconditions": "User is offline and has the document editor open.",
+    "steps": "1. Click on 'New Document' button.\n2. Type 'Test Document' in the editor.\n3. Make changes to the document content.\n4. Close the app and reopen it.",
+    "data": "",
+    "expected": "Document 'Test Document' is present with all changes saved and 'Offline – 1 changes queued' message displayed.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Display error banner on server unavailability",
+    "preconditions": "User is on the application homepage.",
+    "steps": "1. Simulate server unavailability.\n2. Refresh the page.\n3. Observe the UI for any error messages.",
+    "data": "",
+    "expected": "An error banner is displayed with a message indicating server unavailability and a 'Retry' button is present.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

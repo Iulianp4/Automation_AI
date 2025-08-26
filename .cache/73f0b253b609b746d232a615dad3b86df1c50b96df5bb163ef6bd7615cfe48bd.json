@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify Submit Button Disabled with Missing Required Fields",
+    "preconditions": "User is on the form submission page.",
+    "steps": "1. Leave all required fields empty.\n2. Attempt to click the 'Submit' button.",
+    "data": "",
+    "expected": "The 'Submit' button is disabled and the missing required fields are highlighted.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Click 'Forgot Password' and verify email sent",
+    "preconditions": "User is on the login page",
+    "steps": "1. Click on 'Forgot Password' button.\n2. Enter registered email address.\n3. Click 'Submit'.",
+    "data": "user@example.com",
+    "expected": "An email with a reset link is sent to user@example.com.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

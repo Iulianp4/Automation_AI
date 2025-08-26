@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify session timeout message and redirect",
+    "preconditions": "User is logged in and has been inactive for the session timeout duration.",
+    "steps": "1. Leave the application idle until the session times out.\n2. Attempt to interact with the application (e.g., click a button).\n3. Observe the displayed message.",
+    "data": "",
+    "expected": "User sees 'Session expired' message and is redirected to the login page.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

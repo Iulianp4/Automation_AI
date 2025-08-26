@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify search functionality with mixed case input",
+    "preconditions": "User is on the homepage of the application.",
+    "steps": "1. Locate the search bar on the homepage.\n2. Type 'café' into the search bar.\n3. Press the 'Search' button.",
+    "data": "café",
+    "expected": "Search results display items that match 'cafe', ignoring case and diacritical marks.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

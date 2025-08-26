@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Re-login and preserve form data",
+    "preconditions": "User is logged in and has filled out a form on the last visited page.",
+    "steps": "1. Wait for session to expire.\n2. Attempt to navigate to the last visited page.\n3. Click on the login button.\n4. Enter valid credentials and submit.\n5. Observe the last visited page.",
+    "data": "username: validUser, password: validPassword",
+    "expected": "User is redirected to the last visited page with the previously entered form data still populated.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

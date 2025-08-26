@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify loader animation displays on page load",
+    "preconditions": "User is on the application homepage.",
+    "steps": "1. Open the application homepage in a web browser.\n2. Observe the page during loading.",
+    "data": "",
+    "expected": "Loader animation is displayed until all data is fetched and the UI is fully interactive.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

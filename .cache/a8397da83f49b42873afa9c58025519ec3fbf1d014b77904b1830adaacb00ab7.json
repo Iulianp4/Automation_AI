@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Authenticate user with valid credentials",
+    "preconditions": "User is on the login page",
+    "steps": "1. Enter a valid email in the email input field.\n2. Enter a valid password in the password input field.\n3. Click the 'Login' button.",
+    "data": "Email: user@example.com, Password: validPassword123",
+    "expected": "User is redirected to the Dashboard within 2 seconds.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

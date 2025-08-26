@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Download filtered data as CSV",
+    "preconditions": "User is logged in and has applied filters to the data.",
+    "steps": "1. Navigate to the data export page.\n2. Click on the 'Export' button.",
+    "data": "",
+    "expected": "A CSV file containing the filtered data is downloaded.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]

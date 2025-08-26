@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Verify auto-save functionality of form data",
+    "preconditions": "User is on the form page and has started entering data.",
+    "steps": "1. Start entering data into the form fields.\n2. Wait for 60 seconds.\n3. Navigate away from the form page and then return.",
+    "data": "Sample data entered in the form fields.",
+    "expected": "The previously entered data should be present in the form fields upon returning to the page.",
+    "category": "Positive",
+    "gherkin": ""
+  }
+]
