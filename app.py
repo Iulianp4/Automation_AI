@@ -78,22 +78,68 @@ st.sidebar.title("Settings")
 
 # Generation knobs (allow 0)
 st.sidebar.subheader("Generation")
-num_req = st.sidebar.number_input("Tests per REQUIREMENT row", min_value=0, max_value=50, value=int(st.session_state["settings"].get("num_req", 5)), step=1, key="num_req")
-num_ac  = st.sidebar.number_input(f"Tests per ACCEPTANCE ({'GROUP' if AC_MODE=='group' else 'ROW'})", min_value=0, max_value=50, value=int(st.session_state["settings"].get("num_ac", 5)), step=1, key="num_ac")
-num_uc  = st.sidebar.number_input(f"Tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})", min_value=0, max_value=50, value=int(st.session_state["settings"].get("num_uc", 5)), step=1, key="num_uc")
+num_req = st.sidebar.number_input(
+    "Tests per REQUIREMENT row",
+    min_value=0, max_value=50,
+    value=int(st.session_state["settings"].get("num_req", 5)),
+    step=1, key="num_req",
+    help="Poți pune 0 ca să sari peste Requirements."
+)
+num_ac  = st.sidebar.number_input(
+    f"Tests per ACCEPTANCE ({'GROUP' if AC_MODE=='group' else 'ROW'})",
+    min_value=0, max_value=50,
+    value=int(st.session_state["settings"].get("num_ac", 5)),
+    step=1, key="num_ac",
+    help="0 = nu generezi din acceptance_criteria.xlsx."
+)
+num_uc  = st.sidebar.number_input(
+    f"Tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})",
+    min_value=0, max_value=50,
+    value=int(st.session_state["settings"].get("num_uc", 5)),
+    step=1, key="num_uc",
+    help="0 = nu generezi din use_cases.xlsx."
+)
 
-output_style = st.sidebar.selectbox("Output style", ["both", "classic", "gherkin"], index=["both","classic","gherkin"].index(st.session_state["settings"].get("output_style","both")), key="output_style")
-include_ad_hoc = st.sidebar.checkbox("Allow AdHoc category", value=bool(st.session_state["settings"].get("include_ad_hoc", True)), key="include_ad_hoc")
-mix = st.sidebar.selectbox("Test mix", ["balanced","positive_heavy","negative_heavy"], index=["balanced","positive_heavy","negative_heavy"].index(st.session_state["settings"].get("mix","balanced")), key="mix")
+output_style = st.sidebar.selectbox(
+    "Output style",
+    ["both", "classic", "gherkin"],
+    index=["both","classic","gherkin"].index(st.session_state["settings"].get("output_style","both")),
+    key="output_style",
+    help="classic = doar pași; gherkin = doar Given/When/Then; both = ambele."
+)
+include_ad_hoc = st.sidebar.checkbox(
+    "Allow AdHoc category",
+    value=bool(st.session_state["settings"].get("include_ad_hoc", True)),
+    key="include_ad_hoc",
+    help="Dacă e bifat, generatorul poate include și categoria AdHoc."
+)
+mix = st.sidebar.selectbox(
+    "Test mix",
+    ["balanced","positive_heavy","negative_heavy"],
+    index=["balanced","positive_heavy","negative_heavy"].index(st.session_state["settings"].get("mix","balanced")),
+    key="mix",
+    help="balanced = distribuție uniformă; *_heavy = accent pe pozitiv/negativ."
+)
 
 # Model controls
 st.sidebar.subheader("Model controls")
-temperature = st.sidebar.slider("Temperature", 0.0, 1.2, float(st.session_state["settings"].get("temperature", 0.2)), 0.05, key="temperature")
-seed = st.sidebar.number_input("Random seed (0 = auto)", min_value=0, max_value=1_000_000, value=int(st.session_state["settings"].get("seed", 0)), step=1, key="seed")
+temperature = st.sidebar.slider(
+    "Temperature", 0.0, 1.2,
+    float(st.session_state["settings"].get("temperature", 0.2)),
+    0.05, key="temperature",
+    help="Mai mic = mai determinist; mai mare = mai creativ."
+)
+seed = st.sidebar.number_input(
+    "Random seed (0 = auto)",
+    min_value=0, max_value=1_000_000,
+    value=int(st.session_state["settings"].get("seed", 0)),
+    step=1, key="seed",
+    help="Setează un seed >0 pentru rulări reproductibile."
+)
 
 # Model selector + rough cost estimate
 MODEL_PRICES = {
-    # USD per 1M tokens (approx)
+    # USD per 1M tokens (aprox.)
     "gpt-4o-mini": {"in": 0.150, "out": 0.600},
     "gpt-4.1":     {"in": 5.000, "out": 15.000},
 }
@@ -101,16 +147,56 @@ model_choices = list(MODEL_PRICES.keys())
 model_default = st.session_state["settings"].get("model_name", "gpt-4o-mini")
 if model_default not in model_choices:
     model_default = model_choices[0]
-model_name = st.sidebar.selectbox("Model", model_choices, index=model_choices.index(model_default), key="model_name")
+model_name = st.sidebar.selectbox(
+    "Model",
+    model_choices,
+    index=model_choices.index(model_default),
+    key="model_name",
+    help="Alege modelul OpenAI folosit pentru generare."
+)
 
-# Comparison
+# Comparison (renamed + friendlier labels)
 st.sidebar.subheader("Comparison")
-similarity_strategy = st.sidebar.selectbox("Similarity strategy", ["title_expected","title_steps_expected"], index=["title_expected","title_steps_expected"].index(st.session_state["settings"].get("similarity_strategy","title_expected")), key="similarity_strategy")
-similarity_threshold = st.sidebar.slider("Similarity threshold", 0.50, 0.95, float(st.session_state["settings"].get("similarity_threshold", 0.75)), 0.01, key="similarity_threshold")
+
+# map UI labels -> internal strategy
+FRIENDLY_STRATEGY = {
+    "Title & Expected (simple)": "title_expected",
+    "Title + Steps + Expected (detailed)": "title_steps_expected",
+}
+# find default index by internal value
+_internal_default = st.session_state["settings"].get("similarity_strategy", "title_expected")
+_default_label = [k for k, v in FRIENDLY_STRATEGY.items() if v == _internal_default]
+if not _default_label:
+    _default_label = ["Title & Expected (simple)"]
+selected_label = st.sidebar.selectbox(
+    "Matching method",
+    list(FRIENDLY_STRATEGY.keys()),
+    index=list(FRIENDLY_STRATEGY.keys()).index(_default_label[0]),
+    help=(
+        "Cum comparăm testele AI cu baseline-ul manual:\n"
+        "• simple = doar Titlu + Expected\n"
+        "• detailed = Titlu + Steps + Expected (mai strict, dar mai scump)"
+    )
+)
+# store internal value in session
+st.session_state["similarity_strategy"] = FRIENDLY_STRATEGY[selected_label]
+
+similarity_threshold = st.sidebar.slider(
+    "Match threshold",
+    0.50, 0.95,
+    float(st.session_state["settings"].get("similarity_threshold", 0.75)),
+    0.01, key="similarity_threshold",
+    help="Prag de potrivire (0.50 tolerant … 0.95 foarte strict)."
+)
 
 # Data source
 st.sidebar.subheader("Data source")
-use_uploaded = st.sidebar.radio("Use data from", ["Existing /data", "Upload now"], index=0)
+use_uploaded = st.sidebar.radio(
+    "Use data from",
+    ["Existing /data", "Upload now"],
+    index=0,
+    help="Poți încărca fișierele acum sau folosi ce e deja în /data."
+)
 
 # Profiles
 st.sidebar.subheader("Profiles")
@@ -128,17 +214,17 @@ with st.sidebar.expander("Save / Load profiles", expanded=False):
         "similarity_strategy": st.session_state["similarity_strategy"],
         "similarity_threshold": float(st.session_state["similarity_threshold"]),
     }
-    prof_name = st.text_input("Profile name", value="my_profile", key="prof_name")
+    prof_name = st.text_input("Profile name", value="my_profile", key="prof_name", help="Un nume scurt pentru setul de configurări.")
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
-        if st.button("Save profile"):
+        if st.button("Save profile", help="Salvează toate controalele din stânga sub acest nume."):
             profiles.save_profile(st.session_state["prof_name"], current_settings)
             st.success(f"Saved profile: {st.session_state['prof_name']}")
     with col_p2:
         options = profiles.list_profiles()
-        pick = st.selectbox("Load profile", options, index=0 if options else None)
+        pick = st.selectbox("Load profile", options, index=0 if options else None, help="Alege un profil existent.")
     with col_p3:
-        if st.button("Load"):
+        if st.button("Load", help="Aplică profilul selectat mai sus."):
             if pick:
                 payload = profiles.load_profile(pick)
                 if payload:
@@ -146,7 +232,7 @@ with st.sidebar.expander("Save / Load profiles", expanded=False):
                     st.success("Profile loaded → applying controls…")
                     st.rerun()
     with col_p4:
-        if st.button("Set as default"):
+        if st.button("Set as default", help="Acest profil va fi încărcat automat la pornire."):
             try:
                 profiles.set_default_profile(st.session_state["prof_name"])
                 st.success(f"'{st.session_state['prof_name']}' set as default")
@@ -219,8 +305,9 @@ tab_generate, tab_compare, tab_results = st.tabs(["🧪 Generate", "📊 Compare
 # ---------- TAB: Generate ----------
 with tab_generate:
     st.subheader("Generate AI Test Cases")
+    st.caption("Tip: orice control numeric poate fi 0 ca să sari peste sursa respectivă.")
 
-    # --- Pre-flight validation boxes (visible)
+    # --- Pre-flight validation boxes (vizibile)
     req_only = preprocess.read_requirements()
     ac_only  = preprocess.read_acceptance()
     uc_only  = preprocess.read_use_cases()
@@ -476,9 +563,11 @@ with tab_generate:
             if consolidated_parts:
                 consolidated = pd.concat(consolidated_parts, ignore_index=True)
                 final_path = Path(DATA_FILES["report"])  # e.g. "results/report.xlsx"
-                export_excel(consolidated, final_path,
-                             meta={**meta_common, "Source": "Consolidated",
-                                   "Generated cases": len(consolidated)})
+                export_excel(
+                    consolidated, final_path,
+                    meta={**meta_common, "Source": "Consolidated",
+                          "Generated cases": len(consolidated)}
+                )
                 st.success("Generation done. See the Results tab to download files.")
             else:
                 st.warning("No valid input found, or all counts were 0.")
@@ -486,6 +575,9 @@ with tab_generate:
 # ---------- TAB: Compare ----------
 with tab_compare:
     st.subheader("Compare AI vs Manual baseline")
+    st.caption(
+        f"Matching method: **{selected_label}** · Threshold: **{st.session_state['similarity_threshold']:.2f}**"
+    )
     do_compare = st.button("Run Comparison")
     if do_compare:
         with st.spinner("Comparing..."):

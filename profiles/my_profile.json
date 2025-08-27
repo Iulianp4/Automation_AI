@@ -7,7 +7,7 @@
   "mix": "balanced",
   "temperature": 0.2,
   "seed": 0,
+  "model_name": "gpt-4o-mini",
   "similarity_strategy": "title_expected",
-  "similarity_threshold": 0.75,
-  "use_uploaded": "Existing /data"
+  "similarity_threshold": 0.75
 }
