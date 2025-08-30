@@ -44,7 +44,16 @@ def _clean_text(x: str) -> str:
 def ask_int(prompt_text, default_val):
     try:
         s = input(f"{prompt_text} (default {default_val}): ").strip()
+        # >= 0 (permite zero ca să sari o sursă)
         return int(s) if s.isdigit() and int(s) >= 0 else default_val
+    except Exception:
+        return default_val
+
+
+def ask_float(prompt_text, default_val):
+    try:
+        s = input(f"{prompt_text} (default {default_val}): ").strip()
+        return float(s) if s else default_val
     except Exception:
         return default_val
 
@@ -53,6 +62,14 @@ def ask_choice(prompt_text, choices: list[str], default_val: str):
     ch = "/".join(choices)
     s = input(f"{prompt_text} [{ch}] (default {default_val}): ").strip().lower()
     return s if s in [c.lower() for c in choices] else default_val
+
+
+def ask_text(prompt_text, default_val=""):
+    try:
+        s = input(f"{prompt_text} (default '{default_val}'): ").strip()
+        return s if s else default_val
+    except Exception:
+        return default_val
 
 
 # ====================== export (Excel) ======================
@@ -482,21 +499,15 @@ def main():
         include_ad_hoc = (ask_choice("Allow AdHoc category? (yes/no)", ["yes","no"], "yes") == "yes")
         mix            = ask_choice("Test mix? (balanced/positive_heavy/negative_heavy)", ["balanced","positive_heavy","negative_heavy"], DEFAULTS.get("mix","balanced"))
 
-        # NEW: model knobs
-        try:
-            t_in = input(f"Temperature 0.0–1.2 (default {DEFAULTS.get('temperature', 0.2)}): ").strip()
-            temperature = float(t_in) if t_in else float(DEFAULTS.get("temperature", 0.2))
-        except Exception:
-            temperature = float(DEFAULTS.get("temperature", 0.2))
-
-        try:
-            s_in = input(f"Random seed (0 = auto, default {DEFAULTS.get('seed', 0)}): ").strip()
-            s_val = int(s_in) if s_in else int(DEFAULTS.get("seed", 0))
-            seed = None if s_val == 0 else s_val
-        except Exception:
-            seed = None
+        temperature    = ask_float("Temperature 0.0–1.2", DEFAULTS.get("temperature", 0.2))
+        s_val          = ask_int("Random seed (0 = auto)", DEFAULTS.get("seed", 0))
+        seed           = None if s_val == 0 else s_val
 
         compare_only   = (ask_choice("Run comparison only (skip generation)?", ["yes","no"], "no") == "yes")
+
+        # FEATURE MODE (filtru pe un singur Requirement ID)
+        feature_filter = ask_text("Feature mode: filter by Requirement ID (blank = ALL)", "")
+        feature_filter = feature_filter.strip()
     else:
         num_req = DEFAULTS.get("num_req", 5)
         num_ac  = DEFAULTS.get("num_ac", 5)
@@ -508,6 +519,7 @@ def main():
         temperature    = float(DEFAULTS.get("temperature", 0.2))
         s_val          = int(DEFAULTS.get("seed", 0))
         seed           = None if s_val == 0 else s_val
+        feature_filter = str(DEFAULTS.get("feature_filter", "")).strip()
 
     # inputs
     req_only = preprocess.read_requirements()
@@ -515,11 +527,17 @@ def main():
     uc_only  = preprocess.read_use_cases()
     manual_df = preprocess.read_manual_cases()
 
-    # validation messages
+    # validation messages (doar log; în UI e colorat)
     preprocess.validate_columns(req_only, ["requirement_id","requirement_name","requirement_text"], "requirements.xlsx")
     preprocess.validate_columns(ac_only,  ["requirement_id","ac_text"], "acceptance_criteria.xlsx")
     preprocess.validate_columns(uc_only,  ["requirement_id","uc_text"], "use_cases.xlsx")
     preprocess.validate_columns(manual_df, ["tc_id","title","expected"], "manual_cases.xlsx")
+
+    # FEATURE MODE filter (dacă e setat)
+    if feature_filter:
+        req_only = req_only[req_only.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
+        ac_only  = ac_only[ac_only.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
+        uc_only  = uc_only[uc_only.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
 
     has_req = not req_only.empty
     has_ac  = not ac_only.empty
@@ -531,13 +549,16 @@ def main():
         for _, r in req_only.iterrows()
     }
 
-    print(f"📊 Found rows: requirements={len(req_only)}, AC={len(ac_only)}, UC={len(uc_only)}, manual={len(manual_df)}")
+    print(f"📊 Found rows: requirements={len(req_only)}, AC={len(ac_only)}, UC={len(uc_only)}, manual={len(manual_df)}"
+          + (f" | filter='{feature_filter}'" if feature_filter else ""))
 
     df_ai_all = pd.DataFrame()
     consolidated_parts = []
 
     if compare_only:
         df_ai_all = _load_ai_from_results(BASE / "results")
+        if feature_filter and not df_ai_all.empty:
+            df_ai_all = df_ai_all[df_ai_all.get("requirement_id","").astype(str).str.strip() == feature_filter]
         if df_ai_all.empty:
             print("⚠️ No existing AI results found in results/*.xlsx (generated_raw). Will generate now.")
             compare_only = False
@@ -553,12 +574,16 @@ def main():
         "Mix": mix,
         "Temperature": temperature,
         "Seed": seed,
+        "Feature filter": feature_filter or "ALL",
     }
 
     # ===== generation flow (skipped if compare_only and we loaded AI) =====
     if not compare_only:
-        if has_req:
+        if has_req and num_req > 0:
+            # folosim load_all pentru a atașa ac_list/uc_list pe fiecare requirement
             req_df, _, _ = preprocess.load_all()
+            if feature_filter:
+                req_df = req_df[req_df.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
             df_req = generate_from_requirements(
                 req_df, num_tests=num_req, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
                 temperature=temperature, seed=seed
@@ -570,7 +595,7 @@ def main():
             )
             consolidated_parts.append(df_req)
 
-        if has_ac:
+        if has_ac and num_ac > 0:
             if AC_MODE == "group":
                 df_ac = generate_from_acceptance_group(
                     ac_only, req_name_map, num_tests=num_ac, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
@@ -590,7 +615,7 @@ def main():
             )
             consolidated_parts.append(df_ac)
 
-        if has_uc:
+        if has_uc and num_uc > 0:
             if UC_MODE == "group":
                 df_uc = generate_from_use_cases_group(
                     uc_only, req_name_map, num_tests=num_uc, output_style=output_style, include_ad_hoc=include_ad_hoc, mix=mix,
@@ -629,6 +654,8 @@ def main():
             df_ai_all = pd.DataFrame()
             if not (has_req or has_ac or has_uc):
                 print("⚠️ No valid input present. Fill at least one of: requirements, acceptance_criteria, use_cases.")
+            else:
+                print("ℹ Skipped generation for sources with count = 0.")
 
     # ===== AI vs. Manual comparison =====
     has_ai = not df_ai_all.empty
@@ -655,7 +682,12 @@ def main():
                 strategy = DEFAULTS.get("similarity_strategy", COMPARE_STRATEGY)
                 threshold = float(DEFAULTS.get("similarity_threshold", COMPARE_SIM_THRESHOLD))
 
-            cmp_res = run_comparison(df_ai_all, manual_df, strategy=strategy, threshold=threshold)
+            # dacă e feature_filter, filtrăm manual_df la același Requirement ID (opțional)
+            mdf = manual_df.copy()
+            if feature_filter:
+                mdf = mdf[mdf.get("requirement_id","").astype(str).str.strip() == feature_filter]
+
+            cmp_res = run_comparison(df_ai_all, mdf, strategy=strategy, threshold=threshold)
             export_comparison_excel(
                 BASE / "results" / "report_comparison.xlsx",
                 matches=cmp_res["matches"],
@@ -663,13 +695,14 @@ def main():
                 manual_only=cmp_res["manual_only"],
                 scores_summary=cmp_res["scores_summary"],
                 dist_by_category=cmp_res["dist_by_category"],
-                per_requirement_density=cmp_res["per_requirement_density"],
+                per_req_density=cmp_res["per_requirement_density"],
                 trace_matrix=cmp_res["trace_matrix"],
                 run_info={
                     "strategy": strategy,
                     "threshold": threshold,
                     "ai_total": len(df_ai_all),
-                    "manual_total": len(manual_df),
+                    "manual_total": len(mdf),
+                    "feature_filter": feature_filter or "ALL",
                 }
             )
             print("✔ comparison report saved to results/report_comparison.xlsx")

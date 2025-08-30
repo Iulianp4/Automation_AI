@@ -68,7 +68,6 @@ def ui_log(msg: str):
 if "settings" not in st.session_state:
     st.session_state["settings"] = {}
 
-# try autoload default profile once
 _default_payload = profiles.load_default_if_exists()
 if _default_payload:
     st.session_state["settings"].update(_default_payload)
@@ -83,21 +82,21 @@ num_req = st.sidebar.number_input(
     min_value=0, max_value=50,
     value=int(st.session_state["settings"].get("num_req", 5)),
     step=1, key="num_req",
-    help="Poți pune 0 ca să sari peste Requirements."
+    help="Set 0 to skip Requirements."
 )
 num_ac  = st.sidebar.number_input(
     f"Tests per ACCEPTANCE ({'GROUP' if AC_MODE=='group' else 'ROW'})",
     min_value=0, max_value=50,
     value=int(st.session_state["settings"].get("num_ac", 5)),
     step=1, key="num_ac",
-    help="0 = nu generezi din acceptance_criteria.xlsx."
+    help="Set 0 to skip acceptance_criteria.xlsx."
 )
 num_uc  = st.sidebar.number_input(
     f"Tests per USE CASE ({'GROUP' if UC_MODE=='group' else 'ROW'})",
     min_value=0, max_value=50,
     value=int(st.session_state["settings"].get("num_uc", 5)),
     step=1, key="num_uc",
-    help="0 = nu generezi din use_cases.xlsx."
+    help="Set 0 to skip use_cases.xlsx."
 )
 
 output_style = st.sidebar.selectbox(
@@ -105,20 +104,20 @@ output_style = st.sidebar.selectbox(
     ["both", "classic", "gherkin"],
     index=["both","classic","gherkin"].index(st.session_state["settings"].get("output_style","both")),
     key="output_style",
-    help="classic = doar pași; gherkin = doar Given/When/Then; both = ambele."
+    help="classic = steps only; gherkin = Given/When/Then only; both = include both."
 )
 include_ad_hoc = st.sidebar.checkbox(
     "Allow AdHoc category",
     value=bool(st.session_state["settings"].get("include_ad_hoc", True)),
     key="include_ad_hoc",
-    help="Dacă e bifat, generatorul poate include și categoria AdHoc."
+    help="If checked, the generator may include the AdHoc category."
 )
 mix = st.sidebar.selectbox(
     "Test mix",
     ["balanced","positive_heavy","negative_heavy"],
     index=["balanced","positive_heavy","negative_heavy"].index(st.session_state["settings"].get("mix","balanced")),
     key="mix",
-    help="balanced = distribuție uniformă; *_heavy = accent pe pozitiv/negativ."
+    help="balanced = even distribution; *_heavy = emphasis on positive/negative."
 )
 
 # Model controls
@@ -127,19 +126,19 @@ temperature = st.sidebar.slider(
     "Temperature", 0.0, 1.2,
     float(st.session_state["settings"].get("temperature", 0.2)),
     0.05, key="temperature",
-    help="Mai mic = mai determinist; mai mare = mai creativ."
+    help="Lower = more deterministic; higher = more creative."
 )
 seed = st.sidebar.number_input(
     "Random seed (0 = auto)",
     min_value=0, max_value=1_000_000,
     value=int(st.session_state["settings"].get("seed", 0)),
     step=1, key="seed",
-    help="Setează un seed >0 pentru rulări reproductibile."
+    help="Use a seed > 0 for reproducible runs."
 )
 
 # Model selector + rough cost estimate
 MODEL_PRICES = {
-    # USD per 1M tokens (aprox.)
+    # USD per 1M tokens (approx.)
     "gpt-4o-mini": {"in": 0.150, "out": 0.600},
     "gpt-4.1":     {"in": 5.000, "out": 15.000},
 }
@@ -152,18 +151,15 @@ model_name = st.sidebar.selectbox(
     model_choices,
     index=model_choices.index(model_default),
     key="model_name",
-    help="Alege modelul OpenAI folosit pentru generare."
+    help="OpenAI model used for generation."
 )
 
-# Comparison (renamed + friendlier labels)
+# Comparison (friendly labels)
 st.sidebar.subheader("Comparison")
-
-# map UI labels -> internal strategy
 FRIENDLY_STRATEGY = {
     "Title & Expected (simple)": "title_expected",
     "Title + Steps + Expected (detailed)": "title_steps_expected",
 }
-# find default index by internal value
 _internal_default = st.session_state["settings"].get("similarity_strategy", "title_expected")
 _default_label = [k for k, v in FRIENDLY_STRATEGY.items() if v == _internal_default]
 if not _default_label:
@@ -173,12 +169,11 @@ selected_label = st.sidebar.selectbox(
     list(FRIENDLY_STRATEGY.keys()),
     index=list(FRIENDLY_STRATEGY.keys()).index(_default_label[0]),
     help=(
-        "Cum comparăm testele AI cu baseline-ul manual:\n"
-        "• simple = doar Titlu + Expected\n"
-        "• detailed = Titlu + Steps + Expected (mai strict, dar mai scump)"
+        "How we match AI tests to the manual baseline:\n"
+        "• simple = Title + Expected only\n"
+        "• detailed = Title + Steps + Expected (stricter, more expensive)"
     )
 )
-# store internal value in session
 st.session_state["similarity_strategy"] = FRIENDLY_STRATEGY[selected_label]
 
 similarity_threshold = st.sidebar.slider(
@@ -186,7 +181,14 @@ similarity_threshold = st.sidebar.slider(
     0.50, 0.95,
     float(st.session_state["settings"].get("similarity_threshold", 0.75)),
     0.01, key="similarity_threshold",
-    help="Prag de potrivire (0.50 tolerant … 0.95 foarte strict)."
+    help="Similarity cut-off (0.50 tolerant … 0.95 very strict)."
+)
+
+# New: auto-compare toggle
+auto_compare = st.sidebar.checkbox(
+    "Auto-compare after generation",
+    value=False,
+    help="If checked, the app will immediately run AI vs Manual comparison and save report_comparison.xlsx."
 )
 
 # Data source
@@ -195,7 +197,7 @@ use_uploaded = st.sidebar.radio(
     "Use data from",
     ["Existing /data", "Upload now"],
     index=0,
-    help="Poți încărca fișierele acum sau folosi ce e deja în /data."
+    help="Upload fresh files or reuse the ones already present in /data."
 )
 
 # Profiles
@@ -214,17 +216,17 @@ with st.sidebar.expander("Save / Load profiles", expanded=False):
         "similarity_strategy": st.session_state["similarity_strategy"],
         "similarity_threshold": float(st.session_state["similarity_threshold"]),
     }
-    prof_name = st.text_input("Profile name", value="my_profile", key="prof_name", help="Un nume scurt pentru setul de configurări.")
+    prof_name = st.text_input("Profile name", value="my_profile", key="prof_name", help="Short label for this configuration set.")
     col_p1, col_p2, col_p3, col_p4 = st.columns(4)
     with col_p1:
-        if st.button("Save profile", help="Salvează toate controalele din stânga sub acest nume."):
+        if st.button("Save profile", help="Save all current controls under this name."):
             profiles.save_profile(st.session_state["prof_name"], current_settings)
             st.success(f"Saved profile: {st.session_state['prof_name']}")
     with col_p2:
         options = profiles.list_profiles()
-        pick = st.selectbox("Load profile", options, index=0 if options else None, help="Alege un profil existent.")
+        pick = st.selectbox("Load profile", options, index=0 if options else None, help="Pick an existing profile.")
     with col_p3:
-        if st.button("Load", help="Aplică profilul selectat mai sus."):
+        if st.button("Load", help="Apply the selected profile."):
             if pick:
                 payload = profiles.load_profile(pick)
                 if payload:
@@ -232,7 +234,7 @@ with st.sidebar.expander("Save / Load profiles", expanded=False):
                     st.success("Profile loaded → applying controls…")
                     st.rerun()
     with col_p4:
-        if st.button("Set as default", help="Acest profil va fi încărcat automat la pornire."):
+        if st.button("Set as default", help="This profile will be auto-loaded on startup."):
             try:
                 profiles.set_default_profile(st.session_state["prof_name"])
                 st.success(f"'{st.session_state['prof_name']}' set as default")
@@ -240,7 +242,6 @@ with st.sidebar.expander("Save / Load profiles", expanded=False):
                 st.error(str(e))
 
 with st.sidebar.expander("Cost estimate (rough)", expanded=False):
-    # build a quick context proxy from currently loaded data
     req_preview = preprocess.read_requirements().head(5)
     ac_preview  = preprocess.read_acceptance().head(5)
     uc_preview  = preprocess.read_use_cases().head(5)
@@ -261,7 +262,7 @@ with st.sidebar.expander("Cost estimate (rough)", expanded=False):
     t_uc  = min(10, len(uc_preview))  * int(st.session_state["num_uc"])
     total_tests = t_req + t_ac + t_uc
 
-    # heuristically: ~200 output tokens per test
+    # heuristic: ~200 output tokens per test
     out_tokens = max(0, total_tests * 200)
 
     prices = MODEL_PRICES.get(st.session_state["model_name"], {"in": 0.0, "out": 0.0})
@@ -270,7 +271,7 @@ with st.sidebar.expander("Cost estimate (rough)", expanded=False):
     st.write(f"Input tokens (rough): **{in_tokens:,}**")
     st.write(f"Output tokens (rough): **{out_tokens:,}**")
     st.write(f"Estimated cost: **${usd:.4f}**")
-    st.caption("Estimate is approximate and may differ from actual billing.")
+    st.caption("Approximate only—actual billing may differ.")
 
 # ---------- Main UI ----------
 st.title("Automation_AI — UI Test Case Generation & Comparison")
@@ -305,12 +306,24 @@ tab_generate, tab_compare, tab_results = st.tabs(["🧪 Generate", "📊 Compare
 # ---------- TAB: Generate ----------
 with tab_generate:
     st.subheader("Generate AI Test Cases")
-    st.caption("Tip: orice control numeric poate fi 0 ca să sari peste sursa respectivă.")
+    st.caption("Tip: any numeric control can be 0 to skip that data source.")
 
-    # --- Pre-flight validation boxes (vizibile)
+    # Optional filter: single requirement
+    rid_filter = st.text_input(
+        "Filter by Requirement ID (optional)",
+        value="",
+        help="If set, generation will run only for this requirement_id across Requirements/AC/UC."
+    ).strip()
+
+    # Validate + show file health
     req_only = preprocess.read_requirements()
     ac_only  = preprocess.read_acceptance()
     uc_only  = preprocess.read_use_cases()
+
+    if rid_filter:
+        req_only = req_only[req_only.get("requirement_id","").astype(str).str.strip() == rid_filter]
+        ac_only  = ac_only[ac_only.get("requirement_id","").astype(str).str.strip() == rid_filter]
+        uc_only  = uc_only[uc_only.get("requirement_id","").astype(str).str.strip() == rid_filter]
 
     v_req = preprocess.validate_columns(req_only, ["requirement_id","requirement_name","requirement_text"], "requirements.xlsx")
     v_ac  = preprocess.validate_columns(ac_only,  ["requirement_id","ac_text"], "acceptance_criteria.xlsx")
@@ -352,11 +365,14 @@ with tab_generate:
                 "Temperature": float(st.session_state["temperature"]),
                 "Seed": int(st.session_state["seed"]),
                 "Model": st.session_state["model_name"],
+                "RID filter": rid_filter or "(none)"
             }
 
             # REQUIREMENTS
             if not req_only.empty and int(st.session_state["num_req"]) > 0:
                 req_df, _, _ = preprocess.load_all()
+                if rid_filter:
+                    req_df = req_df[req_df.get("requirement_id","").astype(str).str.strip() == rid_filter]
                 rows = []
                 for _, r in req_df.iterrows():
                     rid   = _clean_text(r.get("requirement_id",""))
@@ -568,7 +584,49 @@ with tab_generate:
                     meta={**meta_common, "Source": "Consolidated",
                           "Generated cases": len(consolidated)}
                 )
-                st.success("Generation done. See the Results tab to download files.")
+                st.success("Generation done. Check the Results tab to download files.")
+
+                # Auto-compare (if toggled)
+                if auto_compare:
+                    ai_path = RESULTS_DIR / "report.xlsx"
+                    manual_path = BASE / DATA_FILES["manual"]
+                    if not manual_path.exists():
+                        st.warning("Auto-compare: `data/manual_cases.xlsx` not found. Skipping.")
+                    elif not ai_path.exists():
+                        st.warning("Auto-compare: `results/report.xlsx` not found. Generate first.")
+                    else:
+                        try:
+                            df_ai = pd.read_excel(ai_path, sheet_name="generated_raw").fillna("")
+                            df_manual = pd.read_excel(manual_path).fillna("")
+                            if df_ai.empty or df_manual.empty:
+                                st.warning("Auto-compare: AI or Manual data is empty.")
+                            else:
+                                res = run_comparison(
+                                    df_ai=df_ai,
+                                    df_manual=df_manual,
+                                    strategy=st.session_state["similarity_strategy"],
+                                    threshold=float(st.session_state["similarity_threshold"])
+                                )
+                                out_cmp = RESULTS_DIR / "report_comparison.xlsx"
+                                export_comparison_excel(
+                                    out_cmp,
+                                    matches=res["matches"],
+                                    ai_only=res["ai_only"],
+                                    manual_only=res["manual_only"],
+                                    scores_summary=res["scores_summary"],
+                                    dist_by_category=res["dist_by_category"],
+                                    per_req_density=res["per_requirement_density"],
+                                    trace_matrix=res["trace_matrix"],
+                                    run_info={
+                                        "strategy": st.session_state["similarity_strategy"],
+                                        "threshold": float(st.session_state["similarity_threshold"]),
+                                        "auto_compare": True,
+                                        "rid_filter": rid_filter or "(none)"
+                                    }
+                                )
+                                st.success("Auto-compare finished. Download `report_comparison.xlsx` from the Results tab.")
+                        except Exception as e:
+                            st.error(f"Auto-compare failed: {e}")
             else:
                 st.warning("No valid input found, or all counts were 0.")
 
@@ -634,7 +692,6 @@ with tab_compare:
 with tab_results:
     st.subheader("Download outputs")
 
-    # open folder button + path
     st.write(f"Results path: `{RESULTS_DIR}`")
     if st.button("Open results folder"):
         try:

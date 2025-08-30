@@ -18,6 +18,23 @@ def _norm_id(series: pd.Series) -> pd.Series:
         .str.strip()
     )
 
+def _coalesce_duplicate_column(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    """Dacă există mai multe coloane cu același nume, păstrează una singură
+    cu prima valoare non-goală pe rând, apoi șterge duplicatele."""
+    same = [c for c in df.columns if c == col]
+    if len(same) <= 1:
+        return df
+    # prima valoare non-goală pe fiecare rând
+    def _first_nonempty(row):
+        for v in row:
+            if str(v).strip():
+                return v
+        return ""
+    merged = df[same].apply(_first_nonempty, axis=1)
+    df = df.drop(columns=same)
+    df[col] = merged
+    return df
+
 # --- NEW: friendly validator used by main.py ---
 def validate_columns(df: pd.DataFrame, required: list[str], file_label: str) -> None:
     """Print a friendly warning if required columns are missing."""
@@ -41,10 +58,11 @@ def read_requirements() -> pd.DataFrame:
         "requirements_description": "requirement_text",
         "requirements_rationale": "requirement_rationale",
         "requirements_platform": "requirement_platform",
-        # nou: detalii extra
         "requirement_details": "requirement_details",
     }
     df = df.rename(columns=rename)
+
+    df = _coalesce_duplicate_column(df, "requirement_id")
 
     for col in ["requirement_text", "requirement_name", "requirement_details"]:
         if col not in df.columns:
@@ -56,7 +74,6 @@ def read_requirements() -> pd.DataFrame:
     ] if c in df.columns]
     df = df[keep].copy()
 
-    # normalize & fallback IDs
     if "requirement_id" in df.columns:
         df["requirement_id"] = _norm_id(df["requirement_id"])
         mask_blank = ~df["requirement_id"].apply(_nonempty)
@@ -65,7 +82,6 @@ def read_requirements() -> pd.DataFrame:
     else:
         df["requirement_id"] = _mk_ids("REQ-LONE", len(df))
 
-    # minim necesar: nume sau descriere
     keep_mask = df["requirement_name"].apply(_nonempty) | df["requirement_text"].apply(_nonempty)
     return df[keep_mask].reset_index(drop=True)
 
@@ -81,10 +97,11 @@ def read_acceptance() -> pd.DataFrame:
         "acceptance_criteria": "ac_text",
         "acceptance_criteria_notes": "ac_notes",
         "acceptance_criteria_comments": "ac_comments",
-        # nou: detalii extra
         "acceptance_criteria_details": "ac_details",
     }
     df = df.rename(columns=rename)
+
+    df = _coalesce_duplicate_column(df, "requirement_id")
 
     if "ac_text" not in df.columns:
         return pd.DataFrame(columns=["requirement_id","ac_text","ac_details"])
@@ -100,7 +117,6 @@ def read_acceptance() -> pd.DataFrame:
     else:
         df["requirement_id"] = _mk_ids("AC-LONE", len(df))
 
-    # minim necesar: ac_text
     df = df[df["ac_text"].apply(_nonempty)][["requirement_id","ac_text","ac_details"]]
     return df.reset_index(drop=True)
 
@@ -121,17 +137,17 @@ def read_use_cases() -> pd.DataFrame:
         "use_cases_alternative_flows": "uc_alt",
         "use_cases_exception_flows": "uc_exc",
         "use_cases_business_rules": "uc_rules",
-        # nou: detalii extra
         "use_cases_details": "uc_details",
     }
     df = df.rename(columns=rename)
+
+    df = _coalesce_duplicate_column(df, "requirement_id")
 
     parts = [c for c in ["uc_title","uc_desc","uc_pre","uc_main","uc_alt","uc_exc","uc_rules"] if c in df.columns]
     if "uc_details" not in df.columns:
         df["uc_details"] = ""
 
     if not parts:
-        # totuși putem avea doar detalii
         if "uc_details" in df.columns and "requirement_id" in df.columns:
             out = pd.DataFrame({
                 "requirement_id": df["requirement_id"],
@@ -152,13 +168,11 @@ def read_use_cases() -> pd.DataFrame:
             "uc_details": df.get("uc_details", "")
         })
 
-    # normalize & fallback IDs
     out["requirement_id"] = _norm_id(out["requirement_id"])
     mask_blank = ~out["requirement_id"].apply(_nonempty)
     if mask_blank.any():
         out.loc[mask_blank, "requirement_id"] = _mk_ids("UC-LONE", int(mask_blank.sum()))
 
-    # minim: uc_text sau uc_details
     out["uc_text"] = out["uc_text"].astype(str)
     out["uc_details"] = out["uc_details"].astype(str)
     keep_mask = out["uc_text"].apply(_nonempty) | out["uc_details"].apply(_nonempty)

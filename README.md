@@ -1,4 +1,4 @@
-# Automation_AI — NLP-assisted UI Test Case Generation & Comparison
+# Automation_AI — Test Case Generator
 
 Generate high-quality UI test cases from **Requirements / Acceptance Criteria / Use Cases**, add tester **Details**, export execution-ready Excel, and **compare** AI output vs. a **manual baseline** (precision/recall/F1, coverage, distributions, traceability).
 
