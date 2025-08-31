@@ -25,27 +25,26 @@ Automation_AI/
 │  ├─ requirements.xlsx
 │  ├─ acceptance_criteria.xlsx
 │  ├─ use_cases.xlsx
-│  └─ manual_cases.xlsx        # optional baseline
+│  └─ manual_cases.xlsx                  # optional baseline
 ├─ results/
 │  ├─ report_from_requirements.xlsx
 │  ├─ report_from_acceptance.xlsx
 │  ├─ report_from_use_cases.xlsx
-│  ├─ report.xlsx              # consolidated AI
-│  └─ report_comparison.xlsx   # AI vs Manual
+│  ├─ report.xlsx                        # consolidated AI
+│  └─ report_comparison.xlsx             # AI vs Manual
 ├─ src/
+│  ├─ __init__.py
 │  ├─ config.py
 │  ├─ preprocess.py
 │  ├─ generate_gpt.py
-│  ├─ comparison.py
-│  └─ __init__.py
-├─ main.py
-├─ .env                        # contains OPENAI_API_KEY (NOT committed)
+│  └─ comparison.py
+├─ app.py                                # Streamlit UI
+├─ main.py                               # CLI orchestration
+├─ .env                                  # contains OPENAI_API_KEY (NOT committed)
 ├─ README.md
 ├─ CHANGELOG.md
 └─ requirements.txt
 ```
-
----
 
 ## 🔧 Setup
 
