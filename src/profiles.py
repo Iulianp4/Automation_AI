@@ -1,11 +1,9 @@
-# src/profiles.py
 from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Folderul local unde ținem profilurile (JSON per profil)
-BASE = Path(__file__).resolve().parent.parent  # rădăcina proiectului (unde e main/app)
+BASE = Path(__file__).resolve().parent.parent  
 PROFILES_DIR = BASE / "profiles"
 PROFILES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -60,7 +58,6 @@ def list_profiles() -> List[str]:
     out.sort(key=str.lower)
     return out
 
-# ------- opțional: default profile helpers -------
 
 DEFAULT_POINTER = PROFILES_DIR / "_default.txt"
 

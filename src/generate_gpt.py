@@ -1,4 +1,3 @@
-# src/generate_gpt.py
 from __future__ import annotations
 import os
 import time
@@ -34,7 +33,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("Missing OPENAI_API_KEY in environment/.env")
 
-# default global (poate fi suprascris prin parametru la runtime)
+# default global
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 client = OpenAI(api_key=OPENAI_API_KEY)
 

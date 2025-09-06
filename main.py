@@ -44,7 +44,6 @@ def _clean_text(x: str) -> str:
 def ask_int(prompt_text, default_val):
     try:
         s = input(f"{prompt_text} (default {default_val}): ").strip()
-        # >= 0 (permite zero ca să sari o sursă)
         return int(s) if s.isdigit() and int(s) >= 0 else default_val
     except Exception:
         return default_val
@@ -505,7 +504,7 @@ def main():
 
         compare_only   = (ask_choice("Run comparison only (skip generation)?", ["yes","no"], "no") == "yes")
 
-        # FEATURE MODE (filtru pe un singur Requirement ID)
+        # FEATURE MODE (single filter REQUIREMENT ID)
         feature_filter = ask_text("Feature mode: filter by Requirement ID (blank = ALL)", "")
         feature_filter = feature_filter.strip()
     else:
@@ -527,13 +526,13 @@ def main():
     uc_only  = preprocess.read_use_cases()
     manual_df = preprocess.read_manual_cases()
 
-    # validation messages (doar log; în UI e colorat)
+    # validation messages
     preprocess.validate_columns(req_only, ["requirement_id","requirement_name","requirement_text"], "requirements.xlsx")
     preprocess.validate_columns(ac_only,  ["requirement_id","ac_text"], "acceptance_criteria.xlsx")
     preprocess.validate_columns(uc_only,  ["requirement_id","uc_text"], "use_cases.xlsx")
     preprocess.validate_columns(manual_df, ["tc_id","title","expected"], "manual_cases.xlsx")
 
-    # FEATURE MODE filter (dacă e setat)
+    # FEATURE MODE filter (if its set)
     if feature_filter:
         req_only = req_only[req_only.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
         ac_only  = ac_only[ac_only.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
@@ -580,7 +579,6 @@ def main():
     # ===== generation flow (skipped if compare_only and we loaded AI) =====
     if not compare_only:
         if has_req and num_req > 0:
-            # folosim load_all pentru a atașa ac_list/uc_list pe fiecare requirement
             req_df, _, _ = preprocess.load_all()
             if feature_filter:
                 req_df = req_df[req_df.get("requirement_id","").astype(str).str.strip() == feature_filter].reset_index(drop=True)
@@ -682,7 +680,6 @@ def main():
                 strategy = DEFAULTS.get("similarity_strategy", COMPARE_STRATEGY)
                 threshold = float(DEFAULTS.get("similarity_threshold", COMPARE_SIM_THRESHOLD))
 
-            # dacă e feature_filter, filtrăm manual_df la același Requirement ID (opțional)
             mdf = manual_df.copy()
             if feature_filter:
                 mdf = mdf[mdf.get("requirement_id","").astype(str).str.strip() == feature_filter]

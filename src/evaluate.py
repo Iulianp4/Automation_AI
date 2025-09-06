@@ -4,7 +4,6 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from numpy.linalg import norm
 
-# model mic, rapid; se descarcă la prima rulare
 _model = None
 def _get_model():
     global _model
@@ -34,7 +33,6 @@ def coverage_score(ac_list: List[str], steps_or_expected: str) -> float:
         s = (ac or "").lower().strip()
         if len(s) < 6:
             continue
-        # ia o bucata semnificativa (primele 10-14 caractere fara spatii multiple)
         key = " ".join(s.split())[:14]
         if key and key in text:
             covered += 1
@@ -52,7 +50,6 @@ def map_generated_to_manual(gen_df: pd.DataFrame, man_df: pd.DataFrame, criteria
             best = None
             best_score = -1.0
             for _, m in man_part.iterrows():
-                # similaritate compozita
                 s_title = cosine_sim(str(g["title"]), str(m["title"]))
                 s_steps = cosine_sim(str(g["steps"]), str(m["steps"]))
                 s_exp   = cosine_sim(str(g["expected"]), str(m["expected"]))

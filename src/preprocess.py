@@ -184,12 +184,11 @@ def load_all():
     ac_df  = read_acceptance()
     uc_df  = read_use_cases()
 
-    # asigur tip string la id
     for d in (req_df, ac_df, uc_df):
         if not d.empty and "requirement_id" in d.columns:
             d["requirement_id"] = _norm_id(d["requirement_id"])
 
-    # group & merge (liste AC/UC)
+    # group & merge
     if not ac_df.empty:
         ac_grouped = ac_df.groupby("requirement_id")["ac_text"].apply(list).reset_index()
     else:
